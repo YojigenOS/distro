@@ -1,0 +1,108 @@
+# base-devel —— 构建环境
+#
+# 决策记录 0011 定了它的含义：
+#
+#     配方能用什么  ⟺  base-devel 里有什么
+#     自举完成      ⟺  用 base-devel 能构建出 base-devel 本身
+#
+# 所以这个列表不是「常用的东西」，而是**一个能重建自己的系统**该有的东西。
+# 少一个包，自举就会在某一步报「command not found」——而那正是我们想要的
+# 发现方式：让失败告诉我们缺什么，而不是靠猜。
+#
+# 实测宿主和它的差别只有两样：`patch` 和 `setpriv`（util-linux）。两个都补上了。
+
+[variant]
+name        = "base-devel"
+kind        = "container"
+description = "构建环境：base + 工具链 + 构建工具（自举的目标）"
+
+packages = [
+  # ---- 运行时：和 base 同一套 ----
+  "filesystem",
+  "glibc",
+  "glibc-locales",
+  "bash",
+  "coreutils",
+  "sed",
+  "grep",
+  "gawk",
+  "findutils",
+  "diffutils",
+  "tar",
+  "gzip",
+  "xz",
+
+  # ---- 工具链 ----
+  # gmp / mpfr / mpc 是 gcc 的运行时依赖，会自动带进来，不用列。
+  "binutils",
+  "gcc",
+  "make",
+  "linux-headers",
+
+  # ---- 开发文件 ----
+  # glibc-dev 必须显式列：它**不是**任何东西的运行时依赖（那样设计是故意的，
+  # 见 0014——拼 rootfs 只跟 runtime，所以开发文件自动进不了成品系统）。
+  # 但构建环境恰恰需要它：没有头文件和静态库，什么都编不出来。
+  "glibc-dev",
+
+  # ---- 构建工具 ----
+  # 这几个是「树里没有它，配方就跑不动」的：
+  #   patch       有补丁的配方要用（gzip 就是）
+  #   util-linux  setpriv——构建脚本降权用它，否则容器里的构建以 root 跑
+  #   gettext     有翻译的包要用 msgfmt；也是 glibc 生成 libc.mo 用的
+  "patch",
+  "util-linux",
+  "gettext",
+
+  # ---- configure 会【检查】的程序 ----
+  #
+  # 这一类按命令是查不出来的：它们不是构建时被调用的命令，而是 configure
+  # 会主动去找的程序。glibc 的 configure 直接把话说清楚了：
+  #
+  #     *** These critical programs are missing or too old: bison python
+  #
+  # 在那之前我一直以为自举只缺 setpriv 和 patch 两个——那是按命令查的结论，
+  # 而真实需求得让构建设一遍才知道。
+  "bison",      # glibc 要 → 它自己要 m4
+  "m4",         # bison 运行时调用它；autoconf/libtool 也是 m4 宏
+  "python3",    # glibc 要 → 它自己要 expat 和 libffi
+  "expat",      # python3 的 pyexpat
+  "libffi",     # python3 的 ctypes
+  "libxcrypt",  # perl 链接 libcrypt（glibc 2.28 起不再提供）
+
+  # ---- 从 git 树构建 autotools 项目要的（见 docs/约定/配方约定.md）----
+  # git 树里没有 configure，得现场 autoreconf。而 autoconf 是 Perl 程序，
+  # automake 调用 autoconf，libtool 靠 m4 宏——所以是这四个一起。
+  #
+  # 它们也在 bootstrap/provides.txt 里：libxcrypt → autoconf → perl → libxcrypt
+  # 是个真的环，靠排序解不开。和工具链同族。
+  "perl",
+  "autoconf",
+  "automake",
+  "libtool",
+
+  # 内核的构建过程会调用它（linux-headers 就是被它卡住的）
+  "rsync",
+
+  # ★ git 树里的 GNU 包要它。那些树没有 info 手册（生成物不进版本控制），
+  #   要从 .texi 现场生成，靠 makeinfo。发行包才带着上游生成好的那份。
+  #   xz 用的是 git + autoreconf，所以【这一条不进去，自举验证就会卡在 xz】。
+  "texinfo",
+
+  # ---- 加速 ----
+  # ccache 让重复编译从 347 秒降到 82 秒（glibc 实测，4.2 倍）。
+  # 它要 zstd（4.x 起强制），自己用 cmake 构建——三个包，一条短链。
+  #
+  # 驱动显式把 /usr/lib/ccache 放进 PATH（见 build.py），不靠镜像的 ENV：
+  # base-devel 是通过 docker import 变成镜像的，那不会带 ENV。
+  "ccache",
+  "cmake",
+  "zstd",
+
+  # ---- 库 ----
+  "zlib",
+  "libpng",
+  # initramfs 用（run-vm.sh 打 cpio 归档）。base 不需要它——
+  # 它是【做可启动产物】的工具，不是运行时依赖。
+  "cpio",
+]

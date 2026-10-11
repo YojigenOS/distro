@@ -1,0 +1,37 @@
+# base —— 容器基础镜像
+#
+# 定位写在 docs/决策记录/0013 和 0007 里：一个**能当 docker 容器用**的最小
+# 运行时。同类是 alpine、debian:slim——但它是 glibc 那一侧的。
+#
+# 实测 17 MB（tar.gz）。对照：debian:stable-slim 是 28.8 MB。
+#
+# 这张列表是**唯一出处**。在这之前它是写在 CI workflow 里的，加了 gettext
+# 之后那份就悄悄漏了它——同一个东西两个出处，只有一个会被改。
+
+[variant]
+name        = "base"
+kind        = "container"
+description = "容器基础镜像：glibc + shell + 核心命令 + 中文 locale"
+
+packages = [
+  # 目录骨架。必须最先——它提供 /usr、/etc、以及 /lib → usr/lib 这些
+  # usr-merge 链接，后面每个包的 ELF 里写死的 interpreter 路径都靠它解析。
+  "filesystem",
+
+  # C 库。glibc-locales 是单独拆出来的（约 9 MB）：没有它中文显示不出来，
+  # 而它是「中文优先」在产物层面最直接的体现。
+  "glibc",
+  "glibc-locales",
+
+  # shell 与核心命令。这一组决定了这个镜像「能不能用」。
+  "bash",
+  "coreutils",
+  "sed",
+  "grep",
+  "gawk",
+  "findutils",
+  "diffutils",
+  "tar",
+  "gzip",
+  "xz",
+]
