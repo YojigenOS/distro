@@ -13,6 +13,8 @@ skirt 建包；pantsu 建系统。
                                                 （混合 GPT + 引导器 + grub.cfg + .zst）
     pantsu/pantsu img <名> --publish            顺带准备发布（干跑，只列要传什么）
     pantsu/pantsu img <名> --publish --go       真的传到 repo.os.yojigen.cn
+    pantsu/pantsu publish <名>                  把已建好的镜像放进仓库（干跑）
+    pantsu/pantsu publish <名> --go             同上，真传（CI 里就是这么用的）
     pantsu/pantsu vm <名>                       在 QEMU 里跑起来（默认启磁盘镜像）
     pantsu/pantsu vm <名> --mode direct         内核 + initramfs 直启（改完用户态马上看）
 
@@ -53,7 +55,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pantsulib import flavor, img, repo, root, vm
-from pantsulib.common import DEFAULT_REPO, LOCAL_REPO, resolve_arch
+from pantsulib.common import DEFAULT_REPO, LOCAL_REPO, VAR_DIR, resolve_arch
 
 
 def main() -> None:
@@ -88,6 +90,12 @@ def main() -> None:
     g.add_argument("--go", action="store_true",
                    help="配合 --publish：真的传（和 packages 的 deploy.sh 同一个约定）")
 
+    pb = sub.add_parser("publish", help="把已建好的镜像放进仓库（默认干跑）")
+    pb.add_argument("name")
+    pb.add_argument("--arch", help="默认宿主架构")
+    pb.add_argument("--img", help="指定镜像文件（默认 var/<风味>/<风味>-<架构>.img.zst）")
+    pb.add_argument("--go", action="store_true", help="真的传（不加就只列要传什么）")
+
     m = sub.add_parser("vm", help="在 QEMU 里把它跑起来（镜像或直启）")
     m.add_argument("name")
     m.add_argument("--arch", help="默认宿主架构")
@@ -98,7 +106,9 @@ def main() -> None:
     m.add_argument("--no-accel", action="store_true", help="强制关掉 hvf（跨架构本来就会关）")
     m.add_argument("--firmware", help="aarch64 的 UEFI 固件路径（x86_64 用 QEMU 自带 SeaBIOS）")
     m.add_argument("--serial-file", help="串口写文件、不要图形——给脚本和 CI 用")
-    m.add_argument("--timeout", type=int, help="跑 N 秒就收工（配合 --serial-file 当断言用）")
+    m.add_argument("--timeout", type=int, help="跑 N 秒就收工（配合 --serial-file 用）")
+    m.add_argument("--expect", help="串口里出现这句话就算起来了（CI 的断言；"
+                                    "同时会因为 Kernel panic 立刻失败）")
 
     a = p.parse_args()
 
@@ -114,11 +124,15 @@ def main() -> None:
                         out=a.out, size=a.size, kernel=a.kernel)
         if a.publish:
             repo.publish(zst, a.name, resolve_arch(a.arch), go=a.go)
+    elif a.cmd == "publish":
+        arch = resolve_arch(a.arch)
+        zst = Path(a.img) if a.img else (VAR_DIR / a.name / f"{a.name}-{arch}.img.zst")
+        repo.publish(zst, a.name, arch, go=a.go)
     elif a.cmd == "vm":
         sys.exit(vm.run(a.name, a.arch, img=a.img, mem=a.mem, mode=a.mode,
                         accel=False if a.no_accel else None,
                         firmware=a.firmware, serial_file=a.serial_file,
-                        timeout=a.timeout))
+                        timeout=a.timeout, expect=a.expect))
 
 
 if __name__ == "__main__":

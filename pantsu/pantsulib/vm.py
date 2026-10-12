@@ -63,6 +63,20 @@ def _host_arch() -> str:
     return ARCH_ALIASES.get(platform.machine(), platform.machine())
 
 
+def _accel_name() -> str | None:
+    """宿主上能用的加速器。没有就返回 None（退回 TCG，慢但能跑）。
+
+    macOS 是 hvf，Linux 是 kvm。★ 这件事必须在【宿主】上判断：CI 跑在
+    Linux 上，写死 hvf 会让「在 CI 里验它能启动」这一步直接失败——而那是
+    镜像唯一的自动断言。
+    """
+    if sys.platform == "darwin":
+        return "hvf"
+    if Path("/dev/kvm").exists() and os.access("/dev/kvm", os.R_OK | os.W_OK):
+        return "kvm"
+    return None
+
+
 def _find_firmware(explicit: str | None, arch: str) -> str | None:
     if arch != "aarch64":
         return None          # x86_64 用 QEMU 自带的 SeaBIOS，什么都不用给
@@ -131,7 +145,10 @@ def _qemu_cmd(arch: str, kernel: Path | None, initrd: Path | None, img: Path | N
             cmd += ["-bios", fw]
 
     if accel:
-        cmd += ["-cpu", "host", "-accel", "hvf"]
+        pick = _accel_name()
+        # -cpu host 只有真的在加速时才对：纯模拟下它会暴露宿主的 CPU 特性，
+        # 客户机可能因此跑不起来。
+        cmd += ["-cpu", "host", "-accel", pick] if pick else ["-cpu", "max"]
     else:
         cmd += ["-cpu", "max"]
 
@@ -158,7 +175,7 @@ def _qemu_cmd(arch: str, kernel: Path | None, initrd: Path | None, img: Path | N
 def run(name: str, arch_requested: str | None = None, img: str | None = None,
         mem: str = "1G", mode: str = "auto", accel: bool | None = None,
         firmware: str | None = None, serial_file: str | None = None,
-        timeout: int | None = None) -> int:
+        timeout: int | None = None, expect: str | None = None) -> int:
     v = flavor.load(name)
     arch = resolve_arch(arch_requested)
     work = VAR_DIR / name
@@ -191,8 +208,10 @@ def run(name: str, arch_requested: str | None = None, img: str | None = None,
     log("风味", f"{name}  [{v['_kind']}]")
     log("架构", f"{arch}（宿主 {_host_arch()}）")
     log("方式", {"disk": f"磁盘镜像 {img_path.name}", "direct": "内核 + initramfs 直启"}[mode])
-    if not use_accel:
-        print("        ⚠ 客户机和宿主不同架构，hvf 用不了 → 走 TCG 模拟，会慢很多")
+    if use_accel and _accel_name() is None:
+        print("        ⚠ 这台机器上没有 /dev/kvm（或不是 macOS）→ 退回 TCG 模拟，会慢很多")
+    elif not use_accel:
+        print("        ⚠ 客户机和宿主不同架构，硬件加速用不了 → 走 TCG 模拟，会慢很多")
     print()
 
     serial_out = Path(serial_file) if serial_file else None
@@ -212,19 +231,50 @@ def run(name: str, arch_requested: str | None = None, img: str | None = None,
     print()
 
     if timeout is not None:
-        # 脚本/C I 模式：跑 N 秒，收工，把串口内容打出来。
+        # 脚本 / CI 模式：跑到看见约定的一句话就收工，或者跑到超时为止。
+        #
+        # ★ 不是"睡够 N 秒再看一眼"：那会让每次 CI 都白等满超时，也会让
+        #   "起来了但慢"和"根本没起来"看起来一样。等的是【启动成功这件事
+        #   本身留下的痕迹】——那是这个 workflow 里唯一真正的验收。
         proc = subprocess.Popen(cmd)
+        deadline = time.time() + timeout
+        text, seen = "", False
         try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
+            while time.time() < deadline:
+                if proc.poll() is not None:
+                    break
+                if serial_out and serial_out.is_file():
+                    text = serial_out.read_text(encoding="utf-8", errors="replace")
+                    if "Kernel panic" in text:
+                        break
+                    if expect and expect in text:
+                        seen = True
+                        break
+                time.sleep(1)
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+
         if serial_out and serial_out.is_file():
-            text = serial_out.read_text(errors="replace")
+            text = serial_out.read_text(encoding="utf-8", errors="replace")
             log("串口", f"{serial_out}（{len(text)} 字节）")
+
+        if expect:
+            if seen:
+                print()
+                log("启动", f"看到「{expect}」——它起来了 ✓")
+                return 0
+            print()
+            print(text[-1500:])
+            print()
+            why = "内核 panic 了" if "Kernel panic" in text else f"等了 {timeout} 秒也没看到「{expect}」"
+            die(f"没起来：{why}（完整串口在 {serial_out}）")
+
+        if timeout is not None and not expect:
             print(text[-2000:])
         return 0
 
