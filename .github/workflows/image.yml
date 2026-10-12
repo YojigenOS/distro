@@ -55,6 +55,11 @@ on:
         required: false
         type: boolean
         default: false
+      skip_missing:
+        description: '允许缺包（过渡期用：仓库里还没有的包跳过并大声报出来，根会故意不完整）'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   构建:
@@ -89,7 +94,14 @@ jobs:
       # 边界的全部内容：只有一个来源，"装出来的"和"发布的"就不可能不是
       # 同一个东西。
       - name: 装根（从 apk 仓库）
-        run: ./pantsu/pantsu rootfs "$FLAVOR" --arch "$ARCH"
+        env:
+          SKIP: ${{ inputs.skip_missing }}
+        run: |
+          if [ "$SKIP" = "true" ]; then
+            ./pantsu/pantsu rootfs "$FLAVOR" --arch "$ARCH" --skip-missing
+          else
+            ./pantsu/pantsu rootfs "$FLAVOR" --arch "$ARCH"
+          fi
 
       # ── 2. 建盘 ───────────────────────────────────────────────────────
       - name: 建盘
