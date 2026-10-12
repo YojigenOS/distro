@@ -1,0 +1,175 @@
+# distro 的发布流程：从 apk 仓库组装出一个交付物，验证它，然后推出去。
+#
+# ── 和 packages 的 release 是两件事 ──────────────────────────────────────
+#
+#     packages/release.yml    配方 → .apk → apk 仓库        （生产）
+#     distro/release.yml      仓库 → 组装 → 交付物 → registry（发行）
+#
+# 所以这里【不 checkout packages】。组装只需要两样东西：
+#
+#     一个风味定义（variants/<名>.toml，在这个仓库里）
+#     一个 apk 仓库 URL（https://repo.os.yojigen.cn）
+#
+# 那个 URL 就是两个仓库之间的契约。
+#
+# ── 为什么验证必须在推送之前 ─────────────────────────────────────────────
+#
+# 因为交付物只有【跑起来】才知道对不对，而推出去的镜像别人会拉。
+#
+# 实测过：base 第一次组装时"装成功、tar 成、import 成"三样都对，但
+# `docker run` 报 "no command specified"——docker import 不像 Dockerfile
+# 那样有默认 CMD。那三个"成功"一个都没提这件事。
+#
+# ── 为什么 runner 必须是 aarch64 ─────────────────────────────────────────
+#
+# docker import 的镜像架构由【runner 的 docker daemon】决定，不能跨架构。
+# aarch64 的 runner 上 import 出来的就是 linux/arm64。
+
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      flavor:
+        description: "风味（variants/<名>.toml）"
+        default: base
+        type: string
+      arch:
+        description: "架构"
+        default: aarch64
+        type: choice
+        options: [aarch64, x86_64]
+      tag:
+        description: "镜像 tag"
+        default: edge
+        type: string
+      push:
+        description: "推到 Docker Hub（不勾就只在本地产出并验证）"
+        default: true
+        type: boolean
+
+jobs:
+  release:
+    # ★ 不能用 ubuntu-latest —— 它可能不是我们想要的架构，而且版本会漂。
+    runs-on: ${{ inputs.arch == 'aarch64' && 'ubuntu-26.04-arm' || 'ubuntu-26.04' }}
+    timeout-minutes: 60
+
+    steps:
+      - name: 取 distro
+        uses: actions/checkout@v7
+
+      - name: 报告环境和仓库可达性
+        run: |
+          echo "═══ runner ═══"
+          echo "  架构:   $(uname -m)"
+          echo "  docker: $(docker version --format '{{.Server.Version}}')"
+          echo "  磁盘:   $(df -h / | awk 'NR==2{print $4}') 可用"
+          echo
+          echo "═══ 风味定义 ═══"
+          F="${{ inputs.flavor }}"
+          [ -f "variants/$F.toml" ] || { echo "  ✗ 没有 variants/$F.toml"; exit 1; }
+          echo "  包数: $(python3 -c "
+          import tomllib,sys
+          v=tomllib.loads(open('variants/$F.toml').read())['variant']
+          print(len(v['packages']))")"
+          echo
+          echo "═══ apk 仓库 ═══"
+          REPO=https://repo.os.yojigen.cn
+          # 索引是 v3 的 ADB 格式，不是 tar.gz（名字骗人）。所以只看 HTTP 码。
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 \
+                   "$REPO/${{ inputs.arch }}/APKINDEX.tar.gz")
+          echo "  $REPO/${{ inputs.arch }}/APKINDEX.tar.gz → HTTP $code"
+          [ "$code" = "200" ] || { echo "  ✗ 仓库不可达"; exit 1; }
+
+      # ── 组装 ────────────────────────────────────────────────────────────
+      #
+      # 三步，中间那步不是我们实现的：读风味 → apk add --root → tar → docker import。
+      # apk 自己做依赖解析、冲突检测、下载、校验、解包、记账。
+      - name: 组装
+        run: |
+          set -euo pipefail
+          ./scripts/assemble.sh "${{ inputs.flavor }}" \
+              --repo https://repo.os.yojigen.cn \
+              --arch "${{ inputs.arch }}" \
+              --tag  "${{ inputs.tag }}"
+
+      # ── 验证 ────────────────────────────────────────────────────────────
+      #
+      # ★ 在推送之前。这个镜像别人会拉，所以"能不能跑"要在这里证明，
+      #   而不是等谁拉下来发现起不来。
+      #
+      # 检查的是：默认 CMD 在不在、风味标签对不对、镜像起不起得来、
+      # /bin/sh 是不是我们选的那个、常用命令齐不齐、中文能不能输出、
+      # 动态链接解析得了吗。
+      #
+      # ★ 不检查具体版本号 —— 版本会变，而"能不能用"不该跟着变。
+      - name: 验证 —— 在镜像里跑一遍
+        run: |
+          ./scripts/verify.sh "yojigenos/${{ inputs.flavor }}:${{ inputs.tag }}" \
+              --flavor "${{ inputs.flavor }}"
+
+      - name: 记录镜像身份
+        id: image
+        run: |
+          IMG="yojigenos/${{ inputs.flavor }}:${{ inputs.tag }}"
+          {
+            echo "size=$(docker image inspect "$IMG" --format '{{.Size}}')"
+            echo "id=$(docker image inspect "$IMG" --format '{{.Id}}' | cut -c1-19)"
+            echo "arch=$(docker image inspect "$IMG" --format '{{.Architecture}}')"
+            echo "layers=$(docker image inspect "$IMG" --format '{{len .RootFS.Layers}}')"
+          } >> "$GITHUB_OUTPUT"
+          # 版本号用【这轮运行的起始时间】，不是"现在"——一轮可能跨 UTC 午夜，
+          # 那样两个 tag 会指向不同的日期。一处事实，两处引用。
+          echo "date=$(date -u -d "${{ github.run_started_at }}" +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
+
+          echo "═══ 交付物 ═══"
+          echo "  镜像:   $IMG"
+          echo "  架构:   ${{ steps.image.outputs.arch }}"
+          echo "  大小:   $(echo "${{ steps.image.outputs.size }}" | awk '{printf "%.1f MB", $1/1048576}')"
+          echo "  层数:   ${{ steps.image.outputs.layers }}"
+          echo "  ID:     ${{ steps.image.outputs.id }}"
+          echo "  日期:   ${{ steps.image.outputs.date }}"
+
+      # ── 推送 ────────────────────────────────────────────────────────────
+      - name: 登录 Docker Hub
+        if: inputs.push
+        run: |
+          echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u yojigenos --password-stdin
+
+      # 两个 tag：:edge（跟着最新走）和 :<日期>（钉住这一轮）。
+      # 决策记录 0003 说的「仓库名放变体、tag 放版本」。
+      - name: 推镜像
+        if: inputs.push
+        run: |
+          set -euo pipefail
+          BASE="yojigenos/${{ inputs.flavor }}"
+          docker tag "$BASE:${{ inputs.tag }}" "$BASE:${{ steps.image.outputs.date }}"
+          for t in "${{ inputs.tag }}" "${{ steps.image.outputs.date }}"; do
+            echo "── 推 $BASE:$t ──"
+            docker push "$BASE:$t"
+          done
+
+      - name: 没有勾 push
+        if: ${{ !inputs.push }}
+        run: |
+          echo "只在本地产出并验证，没有推送。"
+          echo "要推的话重新跑一次并勾上 push。"
+
+      - name: 留存 tar
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.flavor }}-${{ inputs.arch }}-${{ github.run_number }}
+          path: var/${{ inputs.flavor }}/${{ inputs.flavor }}-${{ inputs.arch }}.tar.gz
+          retention-days: 14
+
+      - name: 小结
+        run: |
+          echo "═══ 这一轮做了什么 ═══"
+          echo "  风味:   ${{ inputs.flavor }}"
+          echo "  架构:   ${{ inputs.arch }}"
+          echo "  镜像:   yojigenos/${{ inputs.flavor }}:${{ inputs.tag }}"
+          echo "  日期 tag: ${{ steps.image.outputs.date }}"
+          echo "  推送:   ${{ inputs.push }}"
+          echo
+          echo "  验证:   通过（在推送之前跑的）"
+          echo "  配方仓库: 没有 checkout —— 组装只依赖 apk 仓库，不依赖 packages"
