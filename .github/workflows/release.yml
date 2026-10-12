@@ -154,8 +154,37 @@ jobs:
       # ── 推送 ────────────────────────────────────────────────────────────
       - name: 登录 Docker Hub
         if: inputs.push
+        env:
+          # ★ 用户名【不是】组织名。
+          #
+          #   yojigenos 在 2026-10-12 从个人账号转成了组织，而 docker login 的
+          #   -u 要的是【一个用户】——组织不能用个人访问令牌以它自己的名义登录。
+          #   实测报错就是：
+          #
+          #       unauthorized: incorrect username or password
+          #
+          #   所以这里填 owner 账号的 Docker ID；它作为 owner 有 yojigenos/* 的
+          #   写权限，推得进去。
+          #
+          # ★ 从 vars 或 secrets 里读，两种都支持。用户名不是敏感信息，放
+          #   organization variable 更好：secret 会在日志里打码，排查"到底用
+          #   哪个账号登的"时反而看不见。
+          DOCKER_HUB_USER: ${{ vars.DOCKER_HUB_USER || secrets.DOCKER_HUB_USER }}
+          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
         run: |
-          echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u yojigenos --password-stdin
+          set -euo pipefail
+          if [ -z "${DOCKER_HUB_TOKEN:-}" ]; then
+            echo "::error::secret DOCKER_HUB_TOKEN 是空的"
+            exit 1
+          fi
+          if [ -z "${DOCKER_HUB_USER:-}" ]; then
+            echo "::error::没设 DOCKER_HUB_USER（owner 账号的个人 Docker ID，不是组织名）"
+            echo "         建议放 organization variable，不要放 secret——它不是敏感信息，"
+            echo "         而且放 secret 会在日志里打码，排查时看不见用的哪个账号。"
+            exit 1
+          fi
+          echo "  以 $DOCKER_HUB_USER 的身份登录，推 yojigenos/*"
+          echo "$DOCKER_HUB_TOKEN" | docker login -u "$DOCKER_HUB_USER" --password-stdin
 
       # 两个 tag：:edge（跟着最新走）和 :<日期>（钉住这一轮）。
       # 决策记录 0003 说的「仓库名放变体、tag 放版本」。
