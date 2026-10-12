@@ -44,6 +44,22 @@ packages = [
   # gmp / mpfr / mpc 是 gcc 的运行时依赖，会自动带进来，不用列。
   "binutils",
   "gcc",
+  # ★ gcc 的【子包】要显式列。
+  #
+  #   这两个是从 gcc 里拆出来的运行时库（libgcc 136 KB、libstdc++ 2.7 MB，
+  #   而 gcc 主包是 253 MB）。
+  #
+  #   镜像是叠 payload 做的，所以它当然【有】那些文件——payload 里包含它们。
+  #   但镜像是"文件的堆叠"不是"装了包的系统"，没有 apk 数据库，于是
+  #   「谁提供 libstdc++.so.6」这件事无从查起，只能声明。
+  #
+  #   不列它们的话：任何依赖 libstdc++ 的配方（比如 ninja，它是 C++ 写的）
+  #   会被 skirt 判定成"依赖还没构建"，每次都得把 gcc 的一部分重跑一遍。
+  #
+  #   ★ 子包名不会出现在配方闭包里——`skirt provides` 算的是配方名，子包是
+  #     构建时从主包的 payload 里分出来的。所以这类名字只能手写。
+  "libgcc",
+  "libstdc++",
   "make",
   "linux-headers",
 
