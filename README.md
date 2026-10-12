@@ -55,16 +55,16 @@ distro    →  读 manifest + 读仓库 URL  →  下载 → 装进一个根  �
 
 ## 现在的状态
 
-**容器那一格通了；磁盘那一格还没开始。**
+**容器和磁盘两格都通了。磁盘那一格在 QEMU 里真启动验证过。**
 
 ```
 ✓ variants/           三个风味：base / base-devel / minimal（0007 说的"两格都占"）
 ✓ pantsu/             本仓库自己的驱动。skirt 建包，pantsu 建系统
 ✓ apk 软件仓库         https://repo.os.yojigen.cn（aarch64 线上 15 个包）
-✓ 组装（容器）         scripts/assemble.sh —— 现在只做 docker import，装根交给 pantsu
+✓ 组装（容器）         scripts/assemble.sh —— 只做 docker import，装根交给 pantsu
+✓ 建盘（磁盘）         pantsu img —— 混合 GPT + 引导器 + grub.cfg，出 .img.zst
+✓ 跑起来              pantsu vm —— 启镜像 / 内核直启；--serial-file + --timeout 可当断言
 ✓ docs/决策记录/       8 篇属于本仓库的（编号不重编，跳号表示在 packages）
-✗ scripts/run-vm.sh    还在调 `./skirt/skirt paths`——那是 packages 的东西（该收进 pantsu vm）
-✗ 磁盘交付物（.img）    0013 定的那条路，一张自带一切的磁盘镜像。没有它，系统装不到服务器上
 ✗ manifest/            还不存在：这个系统用了哪些包的哪些版本
 ✗ 交付形式/            还不存在：容器 / rootfs / ISO 各自的定义
 ✗ docs/约定/系统约定.md  还不存在
@@ -72,21 +72,27 @@ distro    →  读 manifest + 读仓库 URL  →  下载 → 装进一个根  �
 
 **而最根本的那条已经补上了**：apk 软件仓库存在了，这个仓库因此有了合法的输入。
 pantsu 只认那一个 URL——不 checkout 配方、不读 `var/output/`、不 import `skirtlib`。
+（`scripts/run-vm.sh` 现在只是 `pantsu vm` 的一个壳，最后一处 skirt 调用也没了。）
+
+★ **磁盘那一格只验了一半**：aarch64 + UEFI 那条路在 QEMU 里真启动过
+（edk2 → ESP 里的 GRUB → 我们的内核 → ext4 根 → `/init` → 串口问候）。
+**x86_64 + BIOS（i386-pc）还没验**——本地没有 x86_64 的内核，而那是 TX
+唯一能用的那条引导路径。等 ①。
 
 下一步的顺序：
 
 ```
-① packages 侧：把已建好的包【打包 + 发布】
+① packages 侧：把已建好的包【打包 + 发布】，架构 x86_64
    util-linux · yojigenos-init · linux 躺在 var/output/ 里，线上仓库还没有它们
-② packages 侧：grub · openssh 两份新配方（grub 的 i386-pc 要 gcc 开 multilib）
-③ distro 侧：pantsu img —— 建盘（混合 GPT + 文件系统 + 引导器 + grub.cfg）
-④ distro 侧：pantsu vm / verify-img —— 在 QEMU 里起来，把"能启动"变成 CI 的断言
+   ⚠ release.yml 没有 src/ccache 缓存、上限 60 分钟——编内核会撞墙（实测被 cancelled）
+② packages 侧：grub · openssh 两份新配方（grub 的 i386-pc 要 x86_64 的 gcc 开 multilib）
+③ 上 TX：x86_64 建盘 → 本地 QEMU(SeaBIOS) 验 → reinstall dd
 ```
 
 **验收的原则没变**：装出来的东西要能和另一条路算出来的对上。
-2026-10-12 用了一次——pantsu 接管装根之后，产出的 tar 和旧 `assemble.sh` 的
+2026-10-12 用了两次——pantsu 接管装根之后，产出的 tar 和旧 `assemble.sh` 的
 **逐项一致**（1444 项，模式/属主/大小全同），只少了 PAX 头里那几个不确定的
-时间戳记录。一样就说明换了机制、结果没变。
+时间戳记录；建盘那边则是**在 QEMU 里真启动**，不是看文件对不对。
 
 ## 目录
 
