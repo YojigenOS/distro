@@ -112,23 +112,44 @@ jobs:
         id: image
         run: |
           IMG="yojigenos/${{ inputs.flavor }}:${{ inputs.tag }}"
-          {
-            echo "size=$(docker image inspect "$IMG" --format '{{.Size}}')"
-            echo "id=$(docker image inspect "$IMG" --format '{{.Id}}' | cut -c1-19)"
-            echo "arch=$(docker image inspect "$IMG" --format '{{.Architecture}}')"
-            echo "layers=$(docker image inspect "$IMG" --format '{{len .RootFS.Layers}}')"
-          } >> "$GITHUB_OUTPUT"
+
+          # ★ 先落到 shell 变量，再既写 $GITHUB_OUTPUT 又打印。
+          #
+          #   原来这里是打印时引用 ${{ steps.image.outputs.size }} ——
+          #   而那是【同一个步骤】自己的输出。GitHub Actions 在步骤【开始前】
+          #   就把这些表达式求值完了，所以那时候它们还不存在，四项全是空的：
+          #
+          #       镜像:   yojigenos/base:edge
+          #       架构:
+          #       大小:   0.0 MB
+          #       层数:
+          #       ID:
+          #
+          #   一个步骤读不到自己的 outputs。用 shell 变量就没有这个问题，
+          #   而且它保证了"打印的"和"传给下游的"是同一个值。
+          SIZE=$(docker image inspect "$IMG" --format '{{.Size}}')
+          ID=$(docker image inspect "$IMG" --format '{{.Id}}' | cut -c1-19)
+          ARCH=$(docker image inspect "$IMG" --format '{{.Architecture}}')
+          LAYERS=$(docker image inspect "$IMG" --format '{{len .RootFS.Layers}}')
           # 版本号用【这轮运行的起始时间】，不是"现在"——一轮可能跨 UTC 午夜，
           # 那样两个 tag 会指向不同的日期。一处事实，两处引用。
-          echo "date=$(date -u -d "${{ github.run_started_at }}" +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
+          DATE=$(date -u -d "${{ github.run_started_at }}" +%Y.%m.%d)
+
+          {
+            echo "size=$SIZE"
+            echo "id=$ID"
+            echo "arch=$ARCH"
+            echo "layers=$LAYERS"
+            echo "date=$DATE"
+          } >> "$GITHUB_OUTPUT"
 
           echo "═══ 交付物 ═══"
           echo "  镜像:   $IMG"
-          echo "  架构:   ${{ steps.image.outputs.arch }}"
-          echo "  大小:   $(echo "${{ steps.image.outputs.size }}" | awk '{printf "%.1f MB", $1/1048576}')"
-          echo "  层数:   ${{ steps.image.outputs.layers }}"
-          echo "  ID:     ${{ steps.image.outputs.id }}"
-          echo "  日期:   ${{ steps.image.outputs.date }}"
+          echo "  架构:   $ARCH"
+          echo "  大小:   $(echo "$SIZE" | awk '{printf "%.1f MB", $1/1048576}')"
+          echo "  层数:   $LAYERS"
+          echo "  ID:     $ID"
+          echo "  日期:   $DATE"
 
       # ── 推送 ────────────────────────────────────────────────────────────
       - name: 登录 Docker Hub
