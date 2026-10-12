@@ -92,12 +92,16 @@ def run(cmd: list[str]) -> None:
 
 
 def run_streaming(cmd: list[str], stdin_text: str | None = None,
-                  indent: str = "      ") -> tuple[int, str]:
+                  indent: str = "      ",
+                  env: dict | None = None) -> tuple[int, str]:
     """跑一条命令：输出边跑边打出来，同时攒一份给调用方解析。
 
     为什么不能直接 capture_output：apk 下载和解包要看得见进度。为什么还要
     攒一份：失败时要能从 apk 的报错里认出【哪些包不在仓库里】，好给一句
     人话，而不是把 apk 的原始输出原样倒出来。
+
+    env：整份环境变量（不是增量）。推送镜像要给 rclone 塞
+    RCLONE_CONFIG_YOJIGEN_*，又不能污染当前进程。
     """
     proc = subprocess.Popen(
         cmd,
@@ -106,6 +110,7 @@ def run_streaming(cmd: list[str], stdin_text: str | None = None,
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        env=env,
     )
     if stdin_text is not None and proc.stdin is not None:
         proc.stdin.write(stdin_text)

@@ -11,6 +11,8 @@ skirt 建包；pantsu 建系统。
     pantsu/pantsu rootfs <名> --arch x86_64     指定架构（默认宿主架构）
     pantsu/pantsu img <名>                      把根变成一张能 DD 的磁盘镜像
                                                 （混合 GPT + 引导器 + grub.cfg + .zst）
+    pantsu/pantsu img <名> --publish            顺带准备发布（干跑，只列要传什么）
+    pantsu/pantsu img <名> --publish --go       真的传到 repo.os.yojigen.cn
     pantsu/pantsu vm <名>                       在 QEMU 里跑起来（默认启磁盘镜像）
     pantsu/pantsu vm <名> --mode direct         内核 + initramfs 直启（改完用户态马上看）
 
@@ -33,6 +35,7 @@ skirt 建包；pantsu 建系统。
     flavor.py   风味定义（variants/*.toml）的读取与校验
     root.py     从 apk 仓库装出一个根，打成 tar
     img.py      把根变成磁盘镜像（0013 那条路：混合 GPT + 引导器）
+    repo.py     把镜像放进仓库（repo.os.yojigen.cn，rclone）
     vm.py       在 QEMU 里跑起来（启镜像 / 内核直启）
 
 还没有的（下一刀）:
@@ -49,8 +52,8 @@ from pathlib import Path
 # 允许直接以脚本方式运行（./pantsu/pantsu），无需安装
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from pantsulib import flavor, img, root, vm
-from pantsulib.common import DEFAULT_REPO, LOCAL_REPO
+from pantsulib import flavor, img, repo, root, vm
+from pantsulib.common import DEFAULT_REPO, LOCAL_REPO, resolve_arch
 
 
 def main() -> None:
@@ -80,6 +83,10 @@ def main() -> None:
     g.add_argument("--out", help="输出路径（默认 var/<风味>/<风味>-<架构>.img）")
     g.add_argument("--size", default="1G", help="镜像虚拟大小（默认 1G）")
     g.add_argument("--kernel", help="根里 /boot 下的内核文件名（默认 vmlinuz）")
+    g.add_argument("--publish", action="store_true",
+                   help="建完顺带准备发布（默认干跑，只列要传什么）")
+    g.add_argument("--go", action="store_true",
+                   help="配合 --publish：真的传（和 packages 的 deploy.sh 同一个约定）")
 
     m = sub.add_parser("vm", help="在 QEMU 里把它跑起来（镜像或直启）")
     m.add_argument("name")
@@ -103,8 +110,10 @@ def main() -> None:
         root.build(a.name, a.arch, a.repo,
                    probe=a.probe, skip_missing=a.skip_missing)
     elif a.cmd == "img":
-        img.build(a.name, a.arch, a.repo,
-                  out=a.out, size=a.size, kernel=a.kernel)
+        zst = img.build(a.name, a.arch, a.repo,
+                        out=a.out, size=a.size, kernel=a.kernel)
+        if a.publish:
+            repo.publish(zst, a.name, resolve_arch(a.arch), go=a.go)
     elif a.cmd == "vm":
         sys.exit(vm.run(a.name, a.arch, img=a.img, mem=a.mem, mode=a.mode,
                         accel=False if a.no_accel else None,
