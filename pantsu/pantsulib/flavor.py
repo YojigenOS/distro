@@ -24,8 +24,10 @@ from .common import VARIANTS_DIR, die, log
 #: 0007 里定的四种交付形式。
 KINDS = ("container", "iso", "disk", "kernel")
 
-#: 现在【真能产出交付物】的形式。其余三种写得出、读得进，但产不出来。
-PRODUCIBLE = ("container",)
+#: 现在【真能产出交付物】的形式。
+#:
+#: 2026-10-12：`disk` 加进来了（pantsulib/img.py）。iso / kernel 还是没有。
+PRODUCIBLE = ("container", "disk")
 
 
 def names() -> list[str]:

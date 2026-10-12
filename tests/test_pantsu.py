@@ -67,10 +67,10 @@ class TestFlavorLoading(unittest.TestCase):
         self.assertIn("disk", flavor.KINDS)
         self.assertNotIn("dockerfile", flavor.KINDS)
 
-    def test_disk_还产不出交付物(self):
+    def test_disk_现在能产出交付物了(self):
+        # 2026-10-12：pantsulib/img.py 落地，disk 从 KINDS 走进了 PRODUCIBLE。
         v = flavor.load("minimal")
-        with quiet(), self.assertRaises(SystemExit):
-            flavor.require_producible(v)
+        flavor.require_producible(v)      # 不抛就是过
 
     def test_container_能产交付物(self):
         v = flavor.load("base")
