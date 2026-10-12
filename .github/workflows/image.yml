@@ -29,7 +29,13 @@
 # runner 通常【没有】/dev/kvm，所以下面给的时间比较宽——TCG 下启动一次
 # 要几分钟是正常的。
 
-name: 镜像
+# ★ 和 release.yml 是两条线，不是一件事：
+#
+#     release.yml   仓库 → 组装 → 容器交付物 → registry
+#     image.yml     仓库 → 组装 → 【磁盘镜像】→ repo.os.yojigen.cn（DD 用）
+#
+# 名字刻意不叫"镜像"：这个项目里"镜像"默认指容器镜像。
+name: 磁盘镜像
 
 on:
   workflow_dispatch:
@@ -66,7 +72,7 @@ jobs:
   #   直接判整个 workflow 文件无效（"workflow file issue"，不告诉你是哪一行）。
   #   中文放 name，它就会显示成「镜像 / 构建」。
   build:
-    name: 构建
+    name: 建盘
     # ★ arm64 runner 只在【公开仓库】可用，私有仓库里会直接失败。
     runs-on: ${{ inputs.arch == 'aarch64' && 'ubuntu-26.04-arm' || 'ubuntu-26.04' }}
     timeout-minutes: 120

@@ -41,7 +41,8 @@ skirt 建包；pantsu 建系统。
     vm.py       在 QEMU 里跑起来（启镜像 / 内核直启）
 
 还没有的（下一刀）:
-    image.py    容器交付物（现在还在 scripts/assemble.sh 里）
+    image.py    容器交付物（本地还在 scripts/assemble.sh 里；
+                CI 那条线在 .github/workflows/release.yml）
 """
 
 from __future__ import annotations
