@@ -62,7 +62,11 @@ on:
         default: false
 
 jobs:
-  构建:
+  # ★ job 的 id 只能是 ASCII（字母 / 数字 / - / _）——中文写在这里 GitHub 会
+  #   直接判整个 workflow 文件无效（"workflow file issue"，不告诉你是哪一行）。
+  #   中文放 name，它就会显示成「镜像 / 构建」。
+  build:
+    name: 构建
     # ★ arm64 runner 只在【公开仓库】可用，私有仓库里会直接失败。
     runs-on: ${{ inputs.arch == 'aarch64' && 'ubuntu-26.04-arm' || 'ubuntu-26.04' }}
     timeout-minutes: 120
