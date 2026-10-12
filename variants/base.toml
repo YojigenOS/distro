@@ -52,4 +52,21 @@ packages = [
   "tar",
   "gzip",
   "xz",
+
+  # ---- 包管理器与它的信任链 ----
+  #
+  # apk-tools 是 0006 那条路的终点：在这之前系统有包的格式和建包的工具
+  # （mkpkg/mkndx/adbsign 都是 apk 自己的），但没有客户端。有了它，base 才能
+  # 自己装软件。
+  #
+  # ★ ca-certificates 是它的【运行时依赖】，不是可选项：apk 用 OpenSSL 的
+  #   libfetch 取仓库、验 TLS 证书链（strings libapk 能看到
+  #   SSL_CTX_load_verify_locations 和 Verify hostname）。少了它，apk 能跑但
+  #   连不上任何 https 仓库——而这个系统里所有仓库都是 https。
+  #
+  # ★ openssl 不在这个列表里：apk-tools 的 runtime 依赖写的是 libssl 和
+  #   libcrypto 两个【子包】，它们会跟进来。openssl 主包（命令行 + 开发文件，
+  #   17 MB）不会——实测那样 base 会多带 24 MB 而不是 6.6 MB。
+  "apk-tools",
+  "ca-certificates",
 ]
