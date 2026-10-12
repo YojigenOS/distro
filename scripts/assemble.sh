@@ -109,9 +109,16 @@ echo "  索引可读 ✓"
 # 本地还没签名（repo.sh 支持 --sign-key，密钥还没生成）。发布时签了就不需要它。
 echo
 echo "  [1/2] 装 + 打 tar（容器里）"
+KEYS="$PWD/keys"
+[ -d "$KEYS" ] || { echo "找不到 keys/。先跑 packages/scripts/keys.sh gen。" >&2; exit 1; }
+NKEYS=$(ls "$KEYS"/*.rsa.pub 2>/dev/null | wc -l | tr -d ' ')
+[ "$NKEYS" -gt 0 ] || { echo "keys/ 里没有 .rsa.pub" >&2; exit 1; }
+echo "  公钥:    $NKEYS 个（会烤进交付物的 /etc/apk/keys/）"
+
 docker run --rm \
     --add-host=host.docker.internal:host-gateway \
     -v "$OUT:/out" \
+    -v "$KEYS:/keys:ro" \
     alpine:latest sh -c "
         set -e
 
@@ -122,16 +129,29 @@ docker run --rm \
         mkdir -p /newroot
 
         # ★ 仓库根是【不带架构】的那层——apk 自己会加 /$ARCH
-        apk add --allow-untrusted \\
+        # ★ 公钥【先】放进目标根，再装东西。
+        #
+        # 顺序是必须的：apk 装第一个包时就要验签，而验签要公钥。所以不能
+        # 等 filesystem 包（它自己也得验签）带进来——那就成了鸡生蛋。
+        #
+        # 这也正是"信任从哪里开始"的答案：公钥来自【交付物自己的构建输入】
+        # （distro/keys/，在 git 里），不经过网络，不依赖 HTTPS 锚定。
+        mkdir -p /newroot/etc/apk/keys
+        cp /keys/*.rsa.pub /newroot/etc/apk/keys/
+
+        # 仓库地址也先写进去
+        mkdir -p /newroot/etc/apk
+        echo '$REPO' > /newroot/etc/apk/repositories
+
+        # ★ 不用 --allow-untrusted —— 真的验签。
+        apk add --keys-dir /newroot/etc/apk/keys \\
             --repository $REPO \\
             --root /newroot \\
             --initdb \\
             $PKGS 2>&1 | sed 's/^/      /'
 
-        # 仓库地址写进根里——镜像要说得清自己是从哪来的。
-        # ★ 这一步必须在 apk add 之后：它才建出 /etc/apk。
-        mkdir -p /newroot/etc/apk
-        echo '$REPO' > /newroot/etc/apk/repositories
+        # 装完复验：如果上面有错但 apk 继续装了，这里要能看出来
+        apk --root /newroot audit --system 2>&1 | head -5 | sed 's/^/      /' || true
 
         echo
         echo '      ── 装出来的根 ──'
