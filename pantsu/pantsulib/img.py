@@ -294,6 +294,15 @@ def build(name: str, arch_requested: str | None = None, repo: str = DEFAULT_REPO
 
     cmd = [
         "docker", "run", "--rm", "--privileged",
+        # ★ 必须钉在【目标架构】上，不能让它跟着宿主走。
+        #
+        #   这一步要跑 grub-install / grub-mkstandalone，而 GRUB 的模块是
+        #   架构相关的：arm64 的 Alpine 镜像里根本没有 x86_64-efi 那套模块。
+        #   在 Apple Silicon 上建 x86_64 的盘，不加这行会以"找不到模块"失败。
+        #
+        #   CI 里两者一致（ubuntu-26.04 上建 x86_64），所以这行在那里是空操作——
+        #   它服务的是【本地预演】：Mac 上先把镜像启一遍，再拿去 DD。
+        "--platform", f"linux/{arch}",
         "-v", f"{root_dir}:/rootfs:ro",
         "-v", f"{img.parent}:/out",
         "-e", f"IMG_NAME={img.name}",

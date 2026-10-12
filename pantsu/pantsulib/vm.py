@@ -63,13 +63,23 @@ def _host_arch() -> str:
     return ARCH_ALIASES.get(platform.machine(), platform.machine())
 
 
-def _accel_name() -> str | None:
+def _accel_name(guest_arch: str) -> str | None:
     """宿主上能用的加速器。没有就返回 None（退回 TCG，慢但能跑）。
 
-    macOS 是 hvf，Linux 是 kvm。★ 这件事必须在【宿主】上判断：CI 跑在
-    Linux 上，写死 hvf 会让「在 CI 里验它能启动」这一步直接失败——而那是
-    镜像唯一的自动断言。
+    ★ 两件事都要在【宿主】上判断，第二件是踩过的：
+
+    1. **宿主是什么平台**：macOS 用 hvf，Linux 用 kvm。写死 hvf 会让 CI
+       （Linux）那一步直接失败——而那是镜像唯一的自动断言。
+
+    2. **客户机架构必须和宿主一致**。Apple Silicon 的 HVF 只能虚拟化 arm64
+       客户机：在 arm64 Mac 上启 x86_64 镜像，加 `-accel hvf` 会直接起不来。
+       反过来，x86_64 的 Linux 上启 arm64 客户机也不能用 kvm。
+
+       不一致时返回 None → 退回 TCG（纯模拟）。慢，但那是"本地先验一遍，
+       再拿去 DD"唯一的路——而 DD 会重写整块盘，值得先验。
     """
+    if guest_arch != _host_arch():
+        return None
     if sys.platform == "darwin":
         return "hvf"
     if Path("/dev/kvm").exists() and os.access("/dev/kvm", os.R_OK | os.W_OK):
@@ -116,6 +126,7 @@ def _make_initramfs(root_dir: Path, out: Path) -> Path:
     )
     rc, _ = run_streaming([
         "docker", "run", "--rm",
+        "--platform", f"linux/{arch}",
         "-v", f"{root_dir}:/root:ro",
         "-v", f"{out.parent}:/out",
         "-e", f"OUT_NAME={out.name}",
@@ -145,7 +156,7 @@ def _qemu_cmd(arch: str, kernel: Path | None, initrd: Path | None, img: Path | N
             cmd += ["-bios", fw]
 
     if accel:
-        pick = _accel_name()
+        pick = _accel_name(arch)
         # -cpu host 只有真的在加速时才对：纯模拟下它会暴露宿主的 CPU 特性，
         # 客户机可能因此跑不起来。
         cmd += ["-cpu", "host", "-accel", pick] if pick else ["-cpu", "max"]

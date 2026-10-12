@@ -302,13 +302,17 @@ def _probe(name: str, arch: str, tar_path: Path) -> None:
     log("探测", f"导入成临时镜像 {tag}（不是交付物，不会推）")
     # 和容器交付物同一个形状：有 CMD、有 ENV。这样探测的结论才算数。
     run(["docker", "import",
+           "--platform", f"linux/{arch}",
          "-c", "ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
          "-c", "ENV LANG=C.UTF-8",
          "-c", 'CMD ["/bin/sh"]',
          str(tar_path), tag])
 
     log("探测", "在镜像里跑 scripts/verify-in-image.sh")
-    rc, _ = run_streaming(["docker", "run", "--rm", "-i", tag, "/bin/sh"],
+    # --platform：被探测的根可能是【另一个架构】（比如在 Mac 上验 x86_64 的根）。
+    # 不写的话 docker 会按宿主架构给它打标签，运行时报 exec format error。
+    rc, _ = run_streaming(["docker", "run", "--rm", "-i",
+                             "--platform", f"linux/{arch}", tag, "/bin/sh"],
                           stdin_text=script.read_text())
     if rc != 0:
         die(
