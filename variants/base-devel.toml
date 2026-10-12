@@ -105,6 +105,20 @@ packages = [
   "automake",
   "libtool",
 
+  # ★ pkgconf 也是这一类，而且它的缺失方式最难看。
+  #
+  #   它提供 /usr/share/aclocal/pkg.m4——PKG_CHECK_MODULES 那个宏。没有它，宏
+  #   不展开，宏参数里的 AC_MSG_WARN 就成了字面量，autoconf 报的是：
+  #
+  #       configure.ac:245: error: undefined or overquoted macro: AC_MSG_WARN
+  #
+  #   一句话指不到真正缺的东西。（shadow 就是这么撞上的。同类的还有 libffi
+  #   的 LT_SYS_SYMBOL_USCORE。）
+  #
+  #   以前只有 elfutils 一个配方声明了它，所以它没进这个列表。但 PKG_CHECK_MODULES
+  #   是 autotools 项目里的常见写法，这不是"某个包的特殊需求"，是构建环境该有的。
+  "pkgconf",
+
   # 内核的构建过程会调用它（linux-headers 就是被它卡住的）
   "rsync",
 
