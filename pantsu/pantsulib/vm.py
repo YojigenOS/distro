@@ -178,6 +178,11 @@ def run(name: str, arch_requested: str | None = None, img: str | None = None,
         timeout: int | None = None, expect: str | None = None) -> int:
     v = flavor.load(name)
     arch = resolve_arch(arch_requested)
+    # ★ --expect 和 --serial-file 是一对：没人把串口写下来，它就只能一路等到
+    #   超时，然后看起来像"起不来"。那种失败最费时间，所以在门口就拦住。
+    if expect and not serial_file:
+        die("--expect 要配合 --serial-file：否则串口没写到任何地方，"
+            "它只能一路等到超时（看起来像起不来）")
     work = VAR_DIR / name
     root_dir = work / f"rootfs-{arch}"
     img_path = Path(img) if img else (work / f"{name}-{arch}.img")

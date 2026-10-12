@@ -31,6 +31,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 
 from . import flavor
@@ -95,6 +96,27 @@ echo
 echo "── apk audit ──"
 apk --root /newroot audit --system 2>&1 | head -10 || true
 
+# ── 组成清单 ──────────────────────────────────────────────────────────────
+#
+# 一张盘出了问题，第一个要问的是"它到底是哪些包的哪些版本"。apk 自己的库里
+# 有这个事实（/lib/apk/db/installed），但那是给 apk 读的格式。这里把它整理成
+# 一份人能读、能 diff、能贴进 issue 的清单——它会跟着根进 tar、进镜像。
+#
+# ★ 时间戳用固定的 $BUILD_DATE（由 SOURCE_DATE_EPOCH 算出来），不用"现在"：
+#   否则同一份输入会建出两个不同的根，0005 要的确定性就破了。
+#
+# ★ 放在【装根】这一步而不是建盘那一步：tar、磁盘镜像两种交付物就都带着它，
+#   不用各写一遍、也不会两边不一致。
+{
+    echo "# YojigenOS 组成清单"
+    echo "# 风味 $FLAVOR · 架构 $ARCH"
+    echo "# 仓库 $REPO"
+    echo "# 生成 $BUILD_DATE"
+    echo "#"
+    awk -F: '/^P:/{p=$2} /^V:/{print p "-" $2}' /newroot/lib/apk/db/installed | sort
+} > /newroot/etc/yojigenos-manifest
+echo "   清单: $(grep -c '^[^#]' /newroot/etc/yojigenos-manifest) 个包 → /etc/yojigenos-manifest"
+
 # ★ 确定性：排序 + 固定属主 + 固定时间戳 + 去掉 PAX 头里的 atime/ctime。
 #   一条都不能少，理由见 packages 的决策记录 0005。
 #
@@ -154,7 +176,7 @@ def _check_repo(repo: str, arch: str) -> None:
 # ── 装 ────────────────────────────────────────────────────────────────────
 
 def _install(pkgs: list[str], repo: str, root_dir: Path, out_dir: Path,
-             tar_name: str) -> tuple[int, str]:
+             tar_name: str, name: str, arch: str) -> tuple[int, str]:
     """在容器里装根 + 打 tar。返回 (退出码, 合并后的输出)。"""
     #
     # 没有 --platform：组装【不执行】被装的二进制，apk --root 只是解包，所以
@@ -172,6 +194,13 @@ def _install(pkgs: list[str], repo: str, root_dir: Path, out_dir: Path,
         "-e", f"PKGS={' '.join(pkgs)}",
         "-e", f"TAR_NAME={tar_name}",
         "-e", f"TAR_MTIME={TAR_MTIME}",
+        # 组成清单要的四样：它是什么、给哪个架构、从哪儿装的、什么时候装的。
+        # 时间从固定的 TAR_MTIME 推出来——不用"现在"，否则同一份输入建出两个
+        # 不同的根（0005）。
+        "-e", f"FLAVOR={name}",
+        "-e", f"ARCH={arch}",
+        "-e", "BUILD_DATE=" + time.strftime(
+            "%Y-%m-%d %H:%M UTC", time.gmtime(int(TAR_MTIME.lstrip("@")))),
         "-e", f"HOST_UID={os.getuid()}",
         "-e", f"HOST_GID={os.getgid()}",
         TOOL_IMAGE, "sh", "-c", CONTAINER_SCRIPT,
@@ -205,7 +234,7 @@ def build(name: str, arch_requested: str | None = None, repo: str = DEFAULT_REPO
 
     print()
     log("装根", f"{len(pkgs)} 个包，从 {repo}")
-    rc, out = _install(pkgs, repo, root_dir, out_dir, tar_path.name)
+    rc, out = _install(pkgs, repo, root_dir, out_dir, tar_path.name, name, arch)
 
     skipped: list[str] = []
     if rc != 0:
@@ -219,7 +248,7 @@ def build(name: str, arch_requested: str | None = None, repo: str = DEFAULT_REPO
             pkgs = [p for p in pkgs if p not in missing]
             print()
             log("重试", f"{len(pkgs)} 个包")
-            rc, out = _install(pkgs, repo, root_dir, out_dir, tar_path.name)
+            rc, out = _install(pkgs, repo, root_dir, out_dir, tar_path.name, name, arch)
 
         if rc != 0:
             lines = ["装根失败（退出码 %d）" % rc]

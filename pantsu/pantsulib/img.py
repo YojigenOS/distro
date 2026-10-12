@@ -78,6 +78,37 @@ EFI_NAME = {"x86_64": "BOOTX64.EFI", "aarch64": "BOOTAA64.EFI"}
 
 DEFAULT_SIZE = "1G"
 
+#: 分区表本身要占掉的空间：ESP 512 + bios_grub 1 + 两端各 1 MiB 对齐。
+#: 根分区从 514 MiB 开始，到（镜像大小 − 1 MiB）结束。
+LAYOUT_MIB = 515
+
+
+def _mib(size: str) -> int:
+    """把 1G / 1024M / 768 都读成 MiB。读不出来就报错，别猜。"""
+    s = size.strip().upper()
+    try:
+        if s.endswith("G"):
+            return int(s[:-1]) * 1024
+        if s.endswith("M"):
+            return int(s[:-1])
+        return int(s)
+    except ValueError:
+        die(f"看不懂的大小: {size}（写 1G / 1024M / 768 都行）")
+
+
+def _tree_mib(path) -> float:
+    """目录里所有内容的实际大小（MB）。不调 du：那读的是块数，在 APFS 和
+    ext4 上不是一回事，而这里要的是"装进去要占多少"。"""
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for f in files:
+            p = os.path.join(root, f)
+            try:
+                total += os.lstat(p).st_size
+            except OSError:
+                pass
+    return total / 1048576
+
 
 # ── 容器里跑的脚本 ────────────────────────────────────────────────────────
 #
@@ -227,11 +258,35 @@ def build(name: str, arch_requested: str | None = None, repo: str = DEFAULT_REPO
             f"       可引导风味要有内核——把 linux 列进 {name}.toml，或用 --kernel 指一个"
         )
 
+    # ── 装得下吗（在起容器之前算，报的是缘由不是规矩）────────────────────
+    #
+    # ★ 为什么要有这一段：--size 太小会一直走到容器里，然后失败在
+    #   "文件系统比分区大 / parted 拒绝 / 根装不进去"这些看不懂的地方。
+    #   而这件事宿主上就能算清楚：根有多大是知道的。
+    mib = _mib(size)
+    if mib <= LAYOUT_MIB:
+        die(
+            f"--size {size} 太小：分区表本身就要 {LAYOUT_MIB} MiB\n"
+            f"       （ESP 512 + bios_grub 1 + 两端各 1 MiB 对齐）"
+        )
+    room = mib - LAYOUT_MIB
+    need = _tree_mib(root_dir) * 1.15 + 32      # 15% 给 ext4 的块开销，32 MB 留白
+    if room < need:
+        want = int((need + LAYOUT_MIB) / 256 + 1) * 256
+        die(
+            f"镜像装不下根：--size {size} 只给根留 {room:.0f} MB，"
+            f"而这份根要 {need:.0f} MB\n"
+            f"       （{root_dir.relative_to(ROOT)}/ 实际 "
+            f"{_tree_mib(root_dir):.0f} MB，加 15% 块开销和 32 MB 留白）\n"
+            f"       起步用 --size {want}M"
+        )
+
     log("风味", f"{name}  [{v['_kind']}]")
     log("架构", arch)
     log("根", f"{root_dir.relative_to(ROOT)}/")
     log("内核", f"boot/{kname}  ({os.path.getsize(root_dir / 'boot' / kname) / 1048576:.1f} MB)")
-    log("镜像", f"{img}  （{size}）")
+    log("空间", f"根要 {need:.0f} MB / 分区给 {room:.0f} MB（{size}）")
+    log("镜像", f"{img}")
     print()
 
     work.mkdir(parents=True, exist_ok=True)
