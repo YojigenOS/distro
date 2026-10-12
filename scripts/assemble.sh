@@ -169,9 +169,16 @@ docker run --rm \
 # ── ④ 导入成 docker 镜像 ─────────────────────────────────────────────────
 echo
 echo "  [2/2] 导入成镜像 $NAME:$TAG"
+# ★ CMD 必须显式给。docker import 不像 Dockerfile 那样有默认值——不给的话
+#   `docker run <镜像>` 直接报 "no command specified"，而那正是最自然的用法
+#   （进一个 shell 看看）。
+#
+#   /bin/sh 是基础镜像的惯例（alpine、debian:slim 都是）。我们的 /bin/sh 是
+#   dash，所以进去就是个 POSIX shell。
 docker import \
     -c "ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     -c "ENV LANG=C.UTF-8" \
+    -c "CMD [\"/bin/sh\"]" \
     -c "LABEL org.yojigenos.flavor=$FLAVOR" \
     "$OUT/$FLAVOR-$ARCH.tar.gz" \
     "$NAME:$TAG" > /dev/null
@@ -182,6 +189,13 @@ echo "      ✓ $(docker images "$NAME:$TAG" --format '{{.Repository}}:{{.Tag}} 
 # ── 报告 ──────────────────────────────────────────────────────────────────
 echo
 echo "  试着用它："
-echo "      docker run --rm $NAME:$TAG /usr/bin/bash -c 'echo 你好，YojigenOS'"
+# ★ 这里原来写的是 /usr/bin/bash —— 而 base 现在不带 bash 了（/bin/sh 是
+#   dash，见 packages 那边的提交）。提示要跟着产物走，不然它教人用不存在的东西。
+# ★ 注意 docker 的语义：`docker run <镜像> <参数...>` 是【替换 CMD】，
+#   不是往 CMD 后面追加。所以 `docker run <镜像> -c 'echo hi'` 是错的——
+#   docker 会把 `-c` 当成可执行文件，报 "exec: -c: executable file not found"。
+#   要跑一条命令得把 shell 写出来。
+echo "      docker run --rm $NAME:$TAG sh -c 'echo 你好，YojigenOS'"
 echo "      docker run --rm $NAME:$TAG /usr/bin/gawk 'BEGIN{print 1+1}'"
+echo "      docker run -it --rm $NAME:$TAG          # 进去看看（默认进 /bin/sh）"
 echo
