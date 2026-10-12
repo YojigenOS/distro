@@ -1,41 +1,35 @@
 #!/bin/sh
-# 组装一个交付物：从 apk 仓库装出一个根，打成 tar，导入成容器镜像
+# 组装一个容器交付物：从 apk 仓库装出一个根，打成 tar，导入成容器镜像
 #
 # 用法：
 #     ./scripts/assemble.sh base
 #     ./scripts/assemble.sh base --repo http://localhost:18080
 #     ./scripts/assemble.sh base --repo https://repo.os.yojigen.cn --tag edge
 #
-# ── 组装是什么 ────────────────────────────────────────────────────────────
+# ── 它现在只做两件事 ─────────────────────────────────────────────────────
 #
-# 就三步，而且中间那步【不是我们自己实现的】：
+#     ① 装根 + 打 tar     → 交给 pantsu（pantsu/pantsu rootfs）
+#     ② 导入成容器镜像     → docker import
 #
-#     ① 读风味        variants/<名>.toml → 一个包名列表
-#     ② 装            apk add --root <根> --repository <URL> <那些包>
-#                     ★ apk 自己做：依赖解析 · 冲突检测 · 下载 · 校验 · 解包 · 记账
-#     ③ 变成交付物    tar → docker import
+# 第①步原来整段写在这个文件里（在容器里 apk add --root，再 tar）。搬走的理由
+# 是它和"建一张磁盘镜像"的前半段**逐字相同**——同一个东西两个出处，只有一个
+# 会被改。现在它是 pantsu 里的一份实现，单独跑 `pantsu rootfs <风味>` 也行。
 #
-# 【为什么用 Alpine 容器】
+# 为什么解包和打包都要在容器里做、为什么公钥必须先放进去、为什么 tar 要那几个
+# 参数——那些理由跟着实现走了，在 pantsu/pantsulib/root.py 里，这里不再抄一遍。
 #
-# 因为这台机器上没有 apk。而且 Alpine 的 apk 是 3.0，和我们打的包同代（v3）。
-# 它是【借来的工具】——和 bootstrap/ 里那个 Debian 同一类。
+# ── 它只认一个仓库 URL ───────────────────────────────────────────────────
 #
-# 注意：借的是【工具】，不是【包】。Alpine 自己的包是 musl 链接的，一个都用不了
-# （决策记录 0006 那句话）。
-#
-# 【为什么装完还要写 /etc/apk/repositories】
-#
-# 那样镜像里的 apk 才知道去哪装东西。base 是运行时，用户不一定用它装软件，
-# 但把仓库地址写进去是零成本的，而且让镜像【自己说得清它是从哪来的】。
+# 不 checkout 配方，不读 packages/var/output/。最要命的那条理由见 README：
+# 那会让"发布的包"和"用来组装的包"可以是不同的东西，而且没人会发现。
 
 set -eu
 
 cd "$(dirname "$0")/.."
 
 FLAVOR=""
-# ★ 默认指向宿主上的临时服务。注意容器里的 localhost 是【容器自己】——
-#   要访问宿主得用 host.docker.internal（Docker Desktop 提供，Linux 上靠
-#   下面那个 --add-host 参数补）。
+# ★ 默认指向宿主上的临时服务（本地调试）。注意容器里的 localhost 是【容器
+#   自己】——要访问宿主得用 host.docker.internal，pantsu 会加 --add-host。
 REPO="http://host.docker.internal:18080"
 ARCH=aarch64
 TAG=""
@@ -47,128 +41,28 @@ while [ $# -gt 0 ]; do
         --arch) ARCH="$2"; shift 2 ;;
         --tag)  TAG="$2";  shift 2 ;;
         --name) NAME="$2"; shift 2 ;;
-        -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "未知参数: $1" >&2; exit 1 ;;
         *) FLAVOR="$1"; shift ;;
     esac
 done
 
-[ -n "$FLAVOR" ] || { echo "用法: $0 <风味> [--repo URL] [--tag TAG]" >&2; exit 1; }
+[ -n "${FLAVOR}" ] || { echo "用法: $0 <风味> [--repo URL] [--tag TAG]" >&2; exit 1; }
+[ -f "variants/${FLAVOR}.toml" ] || { echo "找不到 variants/${FLAVOR}.toml" >&2; exit 1; }
 
-SPEC="variants/$FLAVOR.toml"
-[ -f "$SPEC" ] || { echo "找不到 $SPEC" >&2; exit 1; }
-
-[ "$(uname -m)" = "arm64" ] && [ "$ARCH" = "aarch64" ] || true
 TAG="${TAG:-edge}"
-NAME="${NAME:-yojigenos/$FLAVOR}"
-OUT="$PWD/var/$FLAVOR"
-mkdir -p "$OUT"
+NAME="${NAME:-yojigenos/${FLAVOR}}"
+OUT="$PWD/var/${FLAVOR}"
+TAR="${OUT}/${FLAVOR}-${ARCH}.tar.gz"
 
-# ── ① 读风味 ──────────────────────────────────────────────────────────────
-#
-# 这是 variants/*.toml 唯一的消费者。而它是【唯一出处】——那张包列表只此一份。
-PKGS=$(python3 - "$SPEC" <<'PY'
-import sys, tomllib, pathlib
-v = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())["variant"]
-print(" ".join(v["packages"]))
-PY
-)
-[ -n "$PKGS" ] || { echo "$SPEC 里没有包" >&2; exit 1; }
+# ── ① 装根 + 打 tar ──────────────────────────────────────────────────────
+./pantsu/pantsu rootfs "${FLAVOR}" --repo "${REPO}" --arch "${ARCH}"
 
-COUNT=$(printf '%s\n' "$PKGS" | wc -w | tr -d ' ')
+[ -f "${TAR}" ] || { echo "pantsu 跑完了，但没有 ${TAR}" >&2; exit 1; }
+
+# ── ② 导入成 docker 镜像 ─────────────────────────────────────────────────
 echo
-echo "  风味:    ${FLAVOR}（$COUNT 个包）"
-echo "  仓库:    $REPO"
-echo "  架构:    $ARCH"
-echo "  输出:    var/$FLAVOR/$FLAVOR-$ARCH.tar.gz"
-echo "  镜像:    $NAME:$TAG"
-echo
-
-# ── 仓库可达性 ────────────────────────────────────────────────────────────
-#
-# 先探一下。不然 apk 的报错会绕一圈才说清楚"仓库拿不到"。
-# ★ 这个检查跑在【宿主】上，而 REPO 里的 host.docker.internal 只在容器里有意义。
-#   所以探测时把它换回 localhost。容器里那个名字由 --add-host 负责解析。
-HOST_REPO=$(printf '%s' "$REPO" | sed 's|host\.docker\.internal|localhost|')
-if ! curl -fsS -o /dev/null --max-time 15 "$HOST_REPO/$ARCH/APKINDEX.tar.gz"; then
-    echo "  拿不到 $HOST_REPO/$ARCH/APKINDEX.tar.gz" >&2
-    echo "  本地起一个：cd packages/var/repo && python3 -m http.server 18080" >&2
-    exit 1
-fi
-echo "  索引可读 ✓"
-
-# ── ②③ 装 + 打 tar（都在容器里，一次做完）────────────────────────────────
-#
-# 【为什么 tar 也在容器里打】
-#
-# macOS 上是 bsdtar，和 GNU tar 的默认行为不同（owner、mtime、排序）。
-# 放进容器里打，这件事就只有一个实现，在哪儿跑都一样——0005 要的确定性。
-#
-# 【为什么要 --allow-untrusted】
-#
-# 本地还没签名（repo.sh 支持 --sign-key，密钥还没生成）。发布时签了就不需要它。
-echo
-echo "  [1/2] 装 + 打 tar（容器里）"
-KEYS="$PWD/keys"
-[ -d "$KEYS" ] || { echo "找不到 keys/。先跑 packages/scripts/keys.sh gen。" >&2; exit 1; }
-NKEYS=$(ls "$KEYS"/*.rsa.pub 2>/dev/null | wc -l | tr -d ' ')
-[ "$NKEYS" -gt 0 ] || { echo "keys/ 里没有 .rsa.pub" >&2; exit 1; }
-echo "  公钥:    $NKEYS 个（会烤进交付物的 /etc/apk/keys/）"
-
-docker run --rm \
-    --add-host=host.docker.internal:host-gateway \
-    -v "$OUT:/out" \
-    -v "$KEYS:/keys:ro" \
-    alpine:latest sh -c "
-        set -e
-
-        # Alpine 自带的 tar 是 BusyBox 的，不认 --sort=name / --mtime。
-        # 0005 要的确定性靠 GNU tar 的那几个参数，所以先装它。
-        apk add --no-cache tar >/dev/null 2>&1
-
-        mkdir -p /newroot
-
-        # ★ 仓库根是【不带架构】的那层——apk 自己会加 /$ARCH
-        # ★ 公钥【先】放进目标根，再装东西。
-        #
-        # 顺序是必须的：apk 装第一个包时就要验签，而验签要公钥。所以不能
-        # 等 filesystem 包（它自己也得验签）带进来——那就成了鸡生蛋。
-        #
-        # 这也正是"信任从哪里开始"的答案：公钥来自【交付物自己的构建输入】
-        # （distro/keys/，在 git 里），不经过网络，不依赖 HTTPS 锚定。
-        mkdir -p /newroot/etc/apk/keys
-        cp /keys/*.rsa.pub /newroot/etc/apk/keys/
-
-        # 仓库地址也先写进去
-        mkdir -p /newroot/etc/apk
-        echo '$REPO' > /newroot/etc/apk/repositories
-
-        # ★ 不用 --allow-untrusted —— 真的验签。
-        apk add --keys-dir /newroot/etc/apk/keys \\
-            --repository $REPO \\
-            --root /newroot \\
-            --initdb \\
-            $PKGS 2>&1 | sed 's/^/      /'
-
-        # 装完复验：如果上面有错但 apk 继续装了，这里要能看出来
-        apk --root /newroot audit --system 2>&1 | head -5 | sed 's/^/      /' || true
-
-        echo
-        echo '      ── 装出来的根 ──'
-        echo \"        包数: \$(ls /newroot/lib/apk/db/installed >/dev/null 2>&1 && apk --root /newroot info 2>/dev/null | wc -l | tr -d ' ')\"
-        echo \"        文件: \$(find /newroot/usr -type f 2>/dev/null | wc -l | tr -d ' ') 个\"
-
-        # ★ 确定性：排序 + 固定 owner + 固定时间戳
-        tar --sort=name --owner=0 --group=0 --numeric-owner \\
-            --mtime=\"@1767225600\" \\
-            -C /newroot -czf /out/$FLAVOR-$ARCH.tar.gz .
-        echo
-        echo \"      tar: \$(stat -c%s /out/$FLAVOR-$ARCH.tar.gz) 字节\"
-    "
-
-# ── ④ 导入成 docker 镜像 ─────────────────────────────────────────────────
-echo
-echo "  [2/2] 导入成镜像 $NAME:$TAG"
+echo "  [2/2] 导入成镜像 ${NAME}:${TAG}"
 # ★ CMD 必须显式给。docker import 不像 Dockerfile 那样有默认值——不给的话
 #   `docker run <镜像>` 直接报 "no command specified"，而那正是最自然的用法
 #   （进一个 shell 看看）。
@@ -179,23 +73,20 @@ docker import \
     -c "ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     -c "ENV LANG=C.UTF-8" \
     -c "CMD [\"/bin/sh\"]" \
-    -c "LABEL org.yojigenos.flavor=$FLAVOR" \
-    "$OUT/$FLAVOR-$ARCH.tar.gz" \
-    "$NAME:$TAG" > /dev/null
+    -c "LABEL org.yojigenos.flavor=${FLAVOR}" \
+    "${TAR}" \
+    "${NAME}:${TAG}" > /dev/null
 
-SIZE=$(docker image inspect "$NAME:$TAG" --format '{{.Size}}')
-echo "      ✓ $(docker images "$NAME:$TAG" --format '{{.Repository}}:{{.Tag}}  {{.Size}}')"
+docker images "${NAME}:${TAG}" --format '      ✓ {{.Repository}}:{{.Tag}}  {{.Size}}'
 
-# ── 报告 ──────────────────────────────────────────────────────────────────
+# ── 报告 ─────────────────────────────────────────────────────────────────
 echo
 echo "  试着用它："
-# ★ 这里原来写的是 /usr/bin/bash —— 而 base 现在不带 bash 了（/bin/sh 是
-#   dash，见 packages 那边的提交）。提示要跟着产物走，不然它教人用不存在的东西。
-# ★ 注意 docker 的语义：`docker run <镜像> <参数...>` 是【替换 CMD】，
-#   不是往 CMD 后面追加。所以 `docker run <镜像> -c 'echo hi'` 是错的——
-#   docker 会把 `-c` 当成可执行文件，报 "exec: -c: executable file not found"。
-#   要跑一条命令得把 shell 写出来。
-echo "      docker run --rm $NAME:$TAG sh -c 'echo 你好，YojigenOS'"
-echo "      docker run --rm $NAME:$TAG /usr/bin/gawk 'BEGIN{print 1+1}'"
-echo "      docker run -it --rm $NAME:$TAG          # 进去看看（默认进 /bin/sh）"
+# ★ docker 的语义：`docker run <镜像> <参数...>` 是【替换 CMD】，不是往 CMD
+#   后面追加。所以 `docker run <镜像> -c 'echo hi'` 是错的——docker 会把 `-c`
+#   当成可执行文件。要跑一条命令得把 shell 写出来。
+# ★ base 不带 bash（/bin/sh 是 dash），提示别教人用不存在的东西。
+echo "      docker run --rm ${NAME}:${TAG} sh -c 'echo 你好，YojigenOS'"
+echo "      docker run --rm ${NAME}:${TAG} /usr/bin/gawk 'BEGIN{print 1+1}'"
+echo "      docker run -it --rm ${NAME}:${TAG}          # 进去看看（默认进 /bin/sh）"
 echo

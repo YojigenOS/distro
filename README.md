@@ -55,36 +55,46 @@ distro    →  读 manifest + 读仓库 URL  →  下载 → 装进一个根  �
 
 ## 现在的状态
 
-**这是一个正在拆的仓库，还不能独立工作。**
+**容器那一格通了；磁盘那一格还没开始。**
 
 ```
-✓ variants/           两个风味的定义（搬过来了）
+✓ variants/           三个风味：base / base-devel / minimal（0007 说的"两格都占"）
+✓ pantsu/             本仓库自己的驱动。skirt 建包，pantsu 建系统
+✓ apk 软件仓库         https://repo.os.yojigen.cn（aarch64 线上 15 个包）
+✓ 组装（容器）         scripts/assemble.sh —— 现在只做 docker import，装根交给 pantsu
 ✓ docs/决策记录/       8 篇属于本仓库的（编号不重编，跳号表示在 packages）
-✗ scripts/*.待改       rootfs.py / variants.py 搬过来了，但它们还 import skirtlib
-✗ scripts/run-vm.sh    还在调 `./skirt/skirt paths`——那是 packages 的东西
+✗ scripts/run-vm.sh    还在调 `./skirt/skirt paths`——那是 packages 的东西（该收进 pantsu vm）
+✗ 磁盘交付物（.img）    0013 定的那条路，一张自带一切的磁盘镜像。没有它，系统装不到服务器上
 ✗ manifest/            还不存在：这个系统用了哪些包的哪些版本
 ✗ 交付形式/            还不存在：容器 / rootfs / ISO 各自的定义
 ✗ docs/约定/系统约定.md  还不存在
 ```
 
-**而最根本的** ✗：**apk 软件仓库还不存在**——没有它，这个仓库就没有合法的输入。
+**而最根本的那条已经补上了**：apk 软件仓库存在了，这个仓库因此有了合法的输入。
+pantsu 只认那一个 URL——不 checkout 配方、不读 `var/output/`、不 import `skirtlib`。
 
-所以下一步的顺序是：
+下一步的顺序：
 
 ```
-① packages 侧：把 var/output/ 打成 .apk + 生成 APKINDEX（+ 签名）
-② packages 侧：把仓库发布出去（GitHub Pages / R2）
-③ distro 侧：写 manifest、写一个只认仓库 URL 的组装器
-④ 验收：★ 装出来的根 == 直接叠 payload 出来的根 ★
+① packages 侧：把已建好的包【打包 + 发布】
+   util-linux · yojigenos-init · linux 躺在 var/output/ 里，线上仓库还没有它们
+② packages 侧：grub · openssh 两份新配方（grub 的 i386-pc 要 gcc 开 multilib）
+③ distro 侧：pantsu img —— 建盘（混合 GPT + 文件系统 + 引导器 + grub.cfg）
+④ distro 侧：pantsu vm / verify-img —— 在 QEMU 里起来，把"能启动"变成 CI 的断言
 ```
 
-**④ 是对新路径最强的验证**——一样就说明换了机制、结果没变。
+**验收的原则没变**：装出来的东西要能和另一条路算出来的对上。
+2026-10-12 用了一次——pantsu 接管装根之后，产出的 tar 和旧 `assemble.sh` 的
+**逐项一致**（1444 项，模式/属主/大小全同），只少了 PAX 头里那几个不确定的
+时间戳记录。一样就说明换了机制、结果没变。
 
 ## 目录
 
 ```
-variants/              风味：哪些包、什么形态（搬过来的）
-scripts/               组装和验证的脚本（大半还没改）
+variants/              风味：哪些包、什么形态
+pantsu/                本仓库的驱动（skirt 的兄弟：那边建包，这边建系统）
+scripts/               薄壳：组装、验证、跑 VM
+keys/                  会烤进交付物的签名公钥
 docs/
 ├── 约定/              系统约定（待写）
 ├── 指南/              怎么把系统跑起来（待写）
