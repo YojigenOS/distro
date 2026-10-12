@@ -11,7 +11,7 @@
 [variant]
 name        = "base"
 kind        = "container"
-description = "容器基础镜像：glibc + shell + 核心命令 + 中文 locale"
+description = "容器基础镜像：glibc + dash + 核心命令 + 中文 locale"
 
 packages = [
   # 目录骨架。必须最先——它提供 /usr、/etc、以及 /lib → usr/lib 这些
@@ -23,8 +23,26 @@ packages = [
   "glibc",
   "glibc-locales",
 
-  # shell 与核心命令。这一组决定了这个镜像「能不能用」。
-  "bash",
+  # shell。/bin/sh 指向 dash（POSIX），不是 bash。
+  #
+  # ★ 为什么用 dash-binsh 而不是 bash：
+  #
+  #   它提供 /bin/sh，而且指向一个【真正的 POSIX shell】。这样别人写
+  #   #!/bin/sh 的脚本在我们这儿和在 Debian 上行为一致——不会偷偷用上
+  #   bash 扩展、换台机器就炸。原来 filesystem 直接建 /bin/sh → bash，
+  #   那个陷阱是我们这一侧造的。
+  #
+  #   Debian 1999 年把 /bin/sh 从 bash 换成 dash，主要理由就是这个：不是
+  #   性能，是【纪律】——只要 /bin/sh 是 bash，大家就会用扩展。
+  #
+  #   完整说明见 packages/recipes/tool/dash/spec.toml。
+  #
+  # ★ 要 bash 的话它还在仓库里，apk add bash 就有。它不该是基础镜像的默认。
+  #
+  # ★ dash-binsh 依赖 dash（子包依赖主包），所以只列这一个就够。
+  "dash-binsh",
+
+  # 核心命令。这一组决定了这个镜像「能不能用」。
   "coreutils",
   "sed",
   "grep",

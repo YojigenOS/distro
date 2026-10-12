@@ -21,6 +21,14 @@ packages = [
   "filesystem",
   "glibc",
   "glibc-locales",
+  # ★ /bin/sh 指向 dash，不是 bash——和 base 同一个理由（见 base.toml）。
+  #
+  #   构建环境【两个都要】：bash 是交互和配方脚本用的，dash 是 /bin/sh 的
+  #   实现。这正是 Debian 的配置。
+  #
+  #   不加这一条的话：filesystem 已经不再提供 /bin/sh 了，重建出来的
+  #   base-devel 镜像会【没有 /bin/sh】——而 configure 脚本全都要它。
+  "dash-binsh",
   "bash",
   "coreutils",
   "sed",
