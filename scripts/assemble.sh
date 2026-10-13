@@ -69,13 +69,63 @@ echo "  [2/2] 导入成镜像 ${NAME}:${TAG}"
 #
 #   /bin/sh 是基础镜像的惯例（alpine、debian:slim 都是）。我们的 /bin/sh 是
 #   dash，所以进去就是个 POSIX shell。
+# ── 标签 ─────────────────────────────────────────────────────────────────
+#
+# ★ 命名空间用【反写域名】，所以根必须是【我们真的拥有的域名】。
+#
+#   原来是 `org.yojigenos.…`——那声明的是 yojigenos.org，而那个域名不是我们的。
+#   真的是 yojigen.cn，所以根是 `cn.yojigen` ✓。
+#
+#   这一层比"连字符"重要：`org.yojigenos` 和 `org.yojigen-os` 都合法、都能用，
+#   但两个都指向一个不存在的域名。合法不等于对。
+#
+#   下面是两大组：
+#     ① `org.opencontainers.image.*` —— OCI 官方的标准标签。工具【真的会读】它们
+#        （docker inspect、镜像扫描器、供应链工具）。写了别人就能知道这个镜像是
+#        从哪个 commit、什么时候、由什么建的。
+#     ② `cn.yojigen.os.*` —— 我们自己的。标准组没有的地方（风味、架构）才用它。
+#
+#   ★ 0003 里计划了 recipe-commit / built / packages 三个，实际一直只实现了 flavor
+#     一个。这里把 built 补上了（就是标准组的 created），另外两个见下。
+
+BUILT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# revision：这份镜像是从哪个 commit 建的。
+#
+# ★ 拿不到就【不写这个标签】，而不是写个占位符。一个说"我不知道"的标签比一个
+#   写着 "unknown" 的标签有用——后者看起来像"这个 commit 叫 unknown"。
+REVISION=""
+if command -v git >/dev/null 2>&1; then
+    REVISION=$(git -C "$(dirname "$0")/.." rev-parse HEAD 2>/dev/null || true)
+fi
+
+LABEL_ARGS=(
+    # ★ 值里有空格就必须加引号。`docker import -c "LABEL ..."` 会【按空格切】，
+    #   不加引号报的是：
+    #       Error response from daemon: Syntax error - can't find = in "OS"
+    #   而那句错误只提到 OS，看不出是 title 那一行长什么样。实测过。
+    -c "LABEL org.opencontainers.image.title=\"Yojigen OS ${FLAVOR}\""
+    -c "LABEL org.opencontainers.image.version=${TAG}"
+    -c "LABEL org.opencontainers.image.created=${BUILT}"
+    -c "LABEL org.opencontainers.image.source=https://github.com/YojigenOS/distro"
+    -c "LABEL org.opencontainers.image.url=https://os.yojigen.cn"
+    -c "LABEL cn.yojigen.os.flavor=${FLAVOR}"
+    -c "LABEL cn.yojigen.os.arch=${ARCH}"
+    -c "LABEL cn.yojigen.os.built=${BUILT}"
+)
+[ -n "$REVISION" ] && LABEL_ARGS+=(-c "LABEL org.opencontainers.image.revision=${REVISION}")
+
 docker import \
     -c "ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     -c "ENV LANG=C.UTF-8" \
     -c "CMD [\"/bin/sh\"]" \
-    -c "LABEL org.yojigenos.flavor=${FLAVOR}" \
+    "${LABEL_ARGS[@]}" \
     "${TAR}" \
     "${NAME}:${TAG}" > /dev/null
+
+echo "  标签:    cn.yojigen.os.flavor=${FLAVOR}  arch=${ARCH}"
+echo "           org.opencontainers.image.created=${BUILT}"
+[ -n "$REVISION" ] && echo "           org.opencontainers.image.revision=${REVISION:0:12}"
 
 docker images "${NAME}:${TAG}" --format '      ✓ {{.Repository}}:{{.Tag}}  {{.Size}}'
 

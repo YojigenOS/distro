@@ -57,7 +57,7 @@ else
 fi
 
 # 风味标签和 --flavor 对不对得上。对不上说明传错了镜像。
-LABEL=$(docker image inspect "$IMG" --format '{{index .Config.Labels "org.yojigenos.flavor"}}' 2>/dev/null)
+LABEL=$(docker image inspect "$IMG" --format '{{index .Config.Labels "cn.yojigen.os.flavor"}}' 2>/dev/null)
 if [ -n "$FLAVOR" ]; then
     if [ "$LABEL" = "$FLAVOR" ]; then
         ok "风味标签: $LABEL"
@@ -66,6 +66,25 @@ if [ -n "$FLAVOR" ]; then
     fi
 elif [ -n "$LABEL" ]; then
     ok "风味标签: $LABEL"
+fi
+
+# ★ OCI 标准标签。这组是【工具真的会读】的（docker inspect、镜像扫描器、
+#   供应链工具），所以它值得被验证——一个"计划了但没写进去"的标签，
+#   和"写了但写错"的标签一样糟：外面的人看不到区别。
+#
+#   验的是【存在且非空】，不是具体值——值每次都不一样（时间、commit）。
+MISSING=""
+for k in org.opencontainers.image.title org.opencontainers.image.version \
+         org.opencontainers.image.created org.opencontainers.image.source \
+         org.opencontainers.image.revision cn.yojigen.os.flavor cn.yojigen.os.arch; do
+    v=$(docker image inspect "$IMG" --format "{{index .Config.Labels \"$k\"}}" 2>/dev/null)
+    [ -n "$v" ] || MISSING="$MISSING $k"
+done
+if [ -z "$MISSING" ]; then
+    ok "OCI 标准标签: 7 个都在"
+else
+    bad "缺这些标签:$MISSING"
+    echo "      （镜像标签是给工具读的，缺了外面看不出这个镜像从哪来）" >&2
 fi
 
 # ── ② 起得来吗 ────────────────────────────────────────────────────────────
