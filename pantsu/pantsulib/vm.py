@@ -224,7 +224,17 @@ def run(name: str, arch_requested: str | None = None, img: str | None = None,
     log("风味", f"{name}  [{v['_kind']}]")
     log("架构", f"{arch}（宿主 {_host_arch()}）")
     log("方式", {"disk": f"磁盘镜像 {img_path.name}", "direct": "内核 + initramfs 直启"}[mode])
-    if use_accel and _accel_name() is None:
+    # ★ 必须传 arch。这里原来写的是 `_accel_name()`——签名要 guest_arch，
+    #   所以每次走到这一行都 TypeError：
+    #
+    #       TypeError: _accel_name() missing 1 required positional argument: 'guest_arch'
+    #
+    #   而它【只在真启动的时候】才走到，于是：
+    #     · 骨架的单元测试不覆盖这条路径
+    #     · 前几轮 CI 从没跑到这里（盘都没建出来过）
+    #
+    #   一跑 QEMU 就现形——这正好说明"启动一次"这个验收步骤的价值。
+    if use_accel and _accel_name(arch) is None:
         print("        ⚠ 这台机器上没有 /dev/kvm（或不是 macOS）→ 退回 TCG 模拟，会慢很多")
     elif not use_accel:
         print("        ⚠ 客户机和宿主不同架构，硬件加速用不了 → 走 TCG 模拟，会慢很多")
