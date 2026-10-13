@@ -185,7 +185,16 @@ def publish(zst: Path, flavor: str, arch: str, go: bool = False) -> str:
         src = str(stage)
         rclone_cmd = rclone.split()
         if rclone_cmd[:1] == ["docker"]:
-            rclone_cmd += ["-v", f"{stage}:/staging"]
+            # ★ 插在【镜像名之前】。
+            #
+            #   `rclone` 这个字符串是 "docker run … rclone/rclone"，直接 append
+            #   会把 -v 放到镜像名后面——那时它已经是【传给 rclone 的参数】了，
+            #   docker 根本不认，于是挂载静默地没生效，报的还是 directory not found。
+            #
+            #   ★ 我上一版就是这么写的，而且【把拼好的命令打印出来了】——
+            #     打印了但没看顺序。打印一个东西和检查一个东西不是一回事。
+            i = rclone_cmd.index("rclone/rclone")
+            rclone_cmd[i:i] = ["-v", f"{stage}:/staging"]
             src = "/staging"
 
         cmd = (rclone_cmd + ["copy", src, dest + "/",
