@@ -225,6 +225,26 @@ losetup -d "$ESP" "$ROOT" "$DISK"
 parted -s "$IMG" print | sed 's/^/   /'
 zstd -q -T0 -19 -f "$IMG" -o "$IMG.zst"
 echo "  压缩后 $(stat -c%s "$IMG.zst") / 未压缩 $(stat -c%s "$IMG")"
+
+# ★ 属主还给宿主。
+#
+#   这个容器是 --privileged 以 root 跑的，写出来的 $IMG 和 $IMG.zst 都归 root。
+#   而下一步 QEMU 是【以宿主用户】跑的，于是打不开自己刚建出来的盘：
+#
+#       qemu-system-x86_64: -drive file=…/minimal-x86_64.img,…:
+#           Could not open '…': Permission denied
+#
+#   实测撞上了。**这是同一类问题的第三次**：
+#     · build 那边还原 payload 之后 skirt 删不掉自己的产物
+#     · vm 那边解压出来的 .img QEMU 打不开（那个分支还没被走到）
+#     · 这里建盘
+#
+#   ★ 规律：**在容器里以 root 写、拿到容器外用 → 必须还属主。**
+#     不能指望"文件是 644 所以能读"——宿主用户对 root 建的文件确实可读，问题
+#     出在 docker 挂载的目录上（容器内 root 建的文件，宿主 uid 常常连目录都进不去）。
+if [ -n "$HOST_UID" ]; then
+    chown "$HOST_UID:$HOST_GID" "$IMG" "$IMG.zst" 2>/dev/null || true
+fi
 """
 
 
@@ -305,6 +325,10 @@ def build(name: str, arch_requested: str | None = None, repo: str = DEFAULT_REPO
         "--platform", f"linux/{arch}",
         "-v", f"{root_dir}:/rootfs:ro",
         "-v", f"{img.parent}:/out",
+        # 建完把属主还回来（见 CONTAINER_SCRIPT 末尾那段注释）。
+        # 用宿主自己的 uid/gid，不写死——CI 上是 1001，开发者本机可能是别的。
+        "-e", f"HOST_UID={os.getuid()}",
+        "-e", f"HOST_GID={os.getgid()}",
         "-e", f"IMG_NAME={img.name}",
         "-e", f"IMG_SIZE={size}",
         "-e", f"KERNEL_NAME={kname}",
