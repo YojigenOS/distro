@@ -108,7 +108,7 @@ apk --root /newroot audit --system 2>&1 | head -10 || true
 # ★ 放在【装根】这一步而不是建盘那一步：tar、磁盘镜像两种交付物就都带着它，
 #   不用各写一遍、也不会两边不一致。
 {
-    echo "# YojigenOS 组成清单"
+    echo "# Yojigen OS 组成清单"
     echo "# 风味 $FLAVOR · 架构 $ARCH"
     echo "# 仓库 $REPO"
     echo "# 生成 $BUILD_DATE"

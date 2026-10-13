@@ -177,7 +177,7 @@ serial --unit=0 --speed=115200
 terminal_input console serial
 terminal_output console serial
 
-menuentry "YojigenOS" {
+menuentry "Yojigen OS" {
     search --fs-uuid --set=root $ROOT_UUID
     linux /boot/$KERNEL_NAME console=tty0 console=$CONSOLE,115200 root=PARTLABEL=yojigenos-root rootfstype=ext4 rw init=/init
 }

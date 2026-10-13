@@ -86,7 +86,7 @@ echo "  试着用它："
 #   后面追加。所以 `docker run <镜像> -c 'echo hi'` 是错的——docker 会把 `-c`
 #   当成可执行文件。要跑一条命令得把 shell 写出来。
 # ★ base 不带 bash（/bin/sh 是 dash），提示别教人用不存在的东西。
-echo "      docker run --rm ${NAME}:${TAG} sh -c 'echo 你好，YojigenOS'"
+echo "      docker run --rm ${NAME}:${TAG} sh -c 'echo 你好，Yojigen OS'"
 echo "      docker run --rm ${NAME}:${TAG} /usr/bin/gawk 'BEGIN{print 1+1}'"
 echo "      docker run -it --rm ${NAME}:${TAG}          # 进去看看（默认进 /bin/sh）"
 echo

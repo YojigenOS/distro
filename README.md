@@ -1,4 +1,4 @@
-# YojigenOS distro
+# Yojigen OS distro
 
 **建系统。** 把一堆软件包组装成能用的交付物：容器镜像、rootfs、ISO。
 

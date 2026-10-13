@@ -1,5 +1,5 @@
 #!/bin/sh
-# 在 QEMU 里启动 YojigenOS —— 现在只是 pantsu vm 的一个薄壳
+# 在 QEMU 里启动 Yojigen OS —— 现在只是 pantsu vm 的一个薄壳
 #
 # 用法：
 #     scripts/run-vm.sh                     # 宿主架构，内核 + initramfs 直启
