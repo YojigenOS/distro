@@ -123,7 +123,8 @@ set -- \
 
 [ -n "$REVISION" ] && set -- "$@" -c "LABEL org.opencontainers.image.revision=${REVISION}"
 
-"$@" \
+docker import \
+    "$@" \
     "${TAR}" \
     "${NAME}:${TAG}" > /dev/null
 
