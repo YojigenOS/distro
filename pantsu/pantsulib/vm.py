@@ -202,10 +202,29 @@ def run(name: str, arch_requested: str | None = None, img: str | None = None,
     # 只有 .zst 就先解出来——手边只有发布附件时最自然的用法。
     if not img_path.is_file() and zst.is_file():
         log("解压", f"{zst.name} → {img_path.name}")
+        # ★ 解压后要把属主还给宿主。
+        #
+        #   容器以 root 跑（apk 要 root），写出来的 .img 就归 root。而 QEMU 是
+        #   以【宿主用户】跑的，于是打不开自己刚解出来的盘：
+        #
+        #       qemu-system-x86_64: -drive file=…/minimal-x86_64.img,…:
+        #           Could not open '…': Permission denied
+        #
+        #   实测撞上了。**这是同一类问题的第二次**——第一次是 build 那边还原
+        #   payload 之后 skirt 删不掉自己的产物（见 scripts/restore-payloads.sh）。
+        #
+        #   规律：**任何"在容器里以 root 写、拿到容器外用"的东西都要还属主。**
+        #   报告这种错误时要注意：qemu 那句话被截断成 "Pe…"，光看日志前 150 个
+        #   字符是看不出 Permission denied 的。
         rc, _ = run_streaming([
-            "docker", "run", "--rm", "-v", f"{img_path.parent}:/out",
+            "docker", "run", "--rm",
+            "-v", f"{img_path.parent}:/out",
+            "-e", f"HOST_UID={os.getuid()}",
+            "-e", f"HOST_GID={os.getgid()}",
             TOOL_IMAGE, "sh", "-c",
-            f"apk add --no-cache zstd >/dev/null 2>&1 && zstd -d -f /out/{zst.name} -o /out/{img_path.name}",
+            f"apk add --no-cache zstd >/dev/null 2>&1 "
+            f"&& zstd -d -f /out/{zst.name} -o /out/{img_path.name} "
+            f"&& chown $HOST_UID:$HOST_GID /out/{img_path.name}",
         ])
         if rc != 0 or not img_path.is_file():
             die(f"解压 {zst.name} 失败")
