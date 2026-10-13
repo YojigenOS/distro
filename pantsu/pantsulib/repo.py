@@ -57,6 +57,21 @@ def public_url(flavor: str, arch: str, name: str) -> str:
     return f"{PUBLIC_BASE}/img/{flavor}/{arch}/{name}"
 
 
+# 要传进 rclone 容器的变量名单。
+#
+# ★ 和 packages/scripts/deploy.sh 里那份【是同一套】。两处必须一起改——
+#   一边加了变量另一边没加，症状是"某个字段静默地没生效"，比直接报错难查。
+RCLONE_VARS = (
+    "RCLONE_CONFIG_YOJIGEN_TYPE",
+    "RCLONE_CONFIG_YOJIGEN_PROVIDER",
+    "RCLONE_CONFIG_YOJIGEN_ENDPOINT",
+    "RCLONE_CONFIG_YOJIGEN_ACCESS_KEY_ID",
+    "RCLONE_CONFIG_YOJIGEN_SECRET_ACCESS_KEY",
+    "RCLONE_CONFIG_YOJIGEN_FORCE_PATH_STYLE",
+    "RCLONE_CONFIG_YOJIGEN_REGION",
+)
+
+
 def _creds() -> tuple[str, dict[str, str]]:
     ak, sk = os.environ.get("S3_AK"), os.environ.get("S3_SK")
     base, bucket = os.environ.get("S3_BASE_URL"), os.environ.get("S3_BUCKET")
@@ -76,7 +91,25 @@ def _creds() -> tuple[str, dict[str, str]]:
     # CI 上装它又是一条命令。放进容器里，这件事就只有一个实现）。
     if shutil.which("rclone"):
         return "rclone", env
-    return "docker run --rm -i rclone/rclone", env
+
+    # ★★ 用容器时必须【逐个 -e 把变量传进去】。
+    #
+    #   `subprocess.Popen(env=env)` 改的是 **docker 客户端**的环境，而
+    #   `docker run` 默认【不会】把客户端的变量带进容器。少了这一步，容器里的
+    #   rclone 什么配置都没有，报的是：
+    #
+    #       CRITICAL: Failed to create file system for "yojigen:***/img/…":
+    #           didn't find section in config file ("yojigen")
+    #
+    #   ——一句和真正原因（变量没传进去）看不出关系的话。
+    #
+    #   `-e VAR`（不带 =值）的语义是"把这个变量从客户端的环境里取出来传进去"，
+    #   正是这里要的。packages/scripts/deploy.sh 里那段是同一个写法，
+    #   而它是对的——**我照抄了思路，漏了这一步。**
+    cmd = "docker run --rm -i"
+    for name in sorted(RCLONE_VARS):
+        cmd += f" -e {name}"
+    return cmd + " rclone/rclone", env
 
 
 def _sha256(p: Path) -> str:
