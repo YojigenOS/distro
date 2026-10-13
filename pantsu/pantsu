@@ -108,7 +108,7 @@ def main() -> None:
     m.add_argument("--firmware", help="aarch64 的 UEFI 固件路径（x86_64 用 QEMU 自带 SeaBIOS）")
     m.add_argument("--serial-file", help="串口写文件、不要图形——给脚本和 CI 用")
     m.add_argument("--timeout", type=int, help="跑 N 秒就收工（配合 --serial-file 用）")
-    m.add_argument("--expect", help="串口里出现这句话就算起来了（CI 的断言；"
+    m.add_argument("--expect", action="append", help="串口里出现这句话就算起来了（CI 的断言；可以给多次，全部出现才算过；"
                                     "同时会因为 Kernel panic 立刻失败）")
 
     a = p.parse_args()

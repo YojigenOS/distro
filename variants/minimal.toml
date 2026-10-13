@@ -93,6 +93,9 @@ packages = [
   #   2. host key 在首启生成（见 yojigen-os-firstboot 那一类包），不是烤进
   #      镜像的——同一个 host key 发给所有人等于没有。
   "openssh",
+  # 没有它镜像起来是没有 IP 的：sshd 起来了但谁也连不上，
+  # 而云主机没有串口。见 recipes/net/dhcpcd/spec.toml 那段。
+  "dhcpcd",
 
   # ── 还没进来，但迟早要 ────────────────────────────────────────────
   # apk-tools   要等 perl → openssl → curl → ca-certificates 那条链（待办 5.8）。

@@ -165,6 +165,17 @@ def _qemu_cmd(arch: str, kernel: Path | None, initrd: Path | None, img: Path | N
 
     cmd += ["-m", mem, "-no-reboot"]
 
+    # ★ 给虚拟机一块网卡，走 user-mode（slirp）。
+    #
+    #   没有这行，测试用的虚拟机【根本没有网络设备】——于是"镜像起来有没有
+    #   IP"这件事永远验不出来。实测就是这么漏的：镜子里没装 DHCP 客户端，
+    #   而 CI 一路绿，因为 QEMU 里压根没网。
+    #
+    #   user-mode 的口径和真机接近：客户机 DHCP 拿到 10.0.2.15，
+    #   网关 10.0.2.2，DNS 10.0.2.3。**所以 dhcpcd 真的会被跑一遍**，
+    #   而不是"配置写对了就算"。
+    cmd += ["-netdev", "user,id=n0", "-device", "virtio-net-pci,netdev=n0"]
+
     if img is not None:
         cmd += ["-drive", f"file={img},if=virtio,format=raw"]
     else:
@@ -186,7 +197,7 @@ def _qemu_cmd(arch: str, kernel: Path | None, initrd: Path | None, img: Path | N
 def run(name: str, arch_requested: str | None = None, img: str | None = None,
         mem: str = "1G", mode: str = "auto", accel: bool | None = None,
         firmware: str | None = None, serial_file: str | None = None,
-        timeout: int | None = None, expect: str | None = None) -> int:
+        timeout: int | None = None, expect: list[str] | None = None) -> int:
     v = flavor.load(name)
     arch = resolve_arch(arch_requested)
     # ★ --expect 和 --serial-file 是一对：没人把串口写下来，它就只能一路等到
@@ -292,7 +303,7 @@ def run(name: str, arch_requested: str | None = None, img: str | None = None,
                     text = serial_out.read_text(encoding="utf-8", errors="replace")
                     if "Kernel panic" in text:
                         break
-                    if expect and expect in text:
+                    if expect and all(e in text for e in expect):
                         seen = True
                         break
                 time.sleep(1)
@@ -311,12 +322,14 @@ def run(name: str, arch_requested: str | None = None, img: str | None = None,
         if expect:
             if seen:
                 print()
-                log("启动", f"看到「{expect}」——它起来了 ✓")
+                log("启动", "看到「%s」——它起来了 ✓" % "」「".join(expect))
                 return 0
             print()
             print(text[-1500:])
             print()
-            why = "内核 panic 了" if "Kernel panic" in text else f"等了 {timeout} 秒也没看到「{expect}」"
+            missing = [e for e in (expect or []) if e not in text]
+            why = ("内核 panic 了" if "Kernel panic" in text
+                   else f"等了 {timeout} 秒也没看到「{'」「'.join(missing)}」")
             die(f"没起来：{why}（完整串口在 {serial_out}）")
 
         if timeout is not None and not expect:
