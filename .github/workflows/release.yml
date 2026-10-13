@@ -193,11 +193,64 @@ jobs:
         run: |
           set -euo pipefail
           BASE="yojigenos/${{ inputs.flavor }}"
-          docker tag "$BASE:${{ inputs.tag }}" "$BASE:${{ steps.image.outputs.date }}"
-          for t in "${{ inputs.tag }}" "${{ steps.image.outputs.date }}"; do
+          ARCH="${{ inputs.arch }}"
+          TAG="${{ inputs.tag }}"
+          DATE="${{ steps.image.outputs.date }}"
+
+          # ★ 推【架构专属】的 tag，而不是直接推 :edge。
+          #
+          #   原来是两次运行各推一次 :edge，**后推的覆盖先推的**——于是
+          #   `docker pull yojigenos/base:edge` 拿到哪个架构取决于最后一次
+          #   推的是谁。而 aarch64 和 x86_64 是两次独立的运行。
+          #
+          #   base-devel:edge-aarch64 / edge-x86_64 本来就是这么命名的
+          #   （手工推的时候），所以这是沿用已有的约定，不是新发明。
+          for t in "$TAG-$ARCH" "$DATE-$ARCH"; do
+            docker tag "$BASE:$TAG" "$BASE:$t"
             echo "── 推 $BASE:$t ──"
             docker push "$BASE:$t"
           done
+
+      # ── 合成多架构清单 ──────────────────────────────────────────────────
+      #
+      # ★ 谁最后推完谁合成。不另开一个"清单工作流"——那会多一个需要人为
+      #   记得触发的步骤，而漏掉它的表现是"清单悄悄过期"，不会报错。
+      #
+      #   两个架构的 tag 都在才做。只有一个的时候什么都不做，那是对的：
+      #   单架构的仓库本来就不该有一个只说一半的清单。
+      #
+      #   用 `buildx imagetools create` 而不是 `docker manifest create`：
+      #   前者直接在 registry 侧读那两个镜像、在 registry 侧合成，**不需要
+      #   本地有这两个镜像**。后者要先把两个都 pull 下来。
+      - name: 合成多架构清单
+        if: inputs.push
+        run: |
+          set -euo pipefail
+          BASE="yojigenos/${{ inputs.flavor }}"
+          TAG="${{ inputs.tag }}"
+
+          have=""
+          for a in aarch64 x86_64; do
+            if docker buildx imagetools inspect "$BASE:$TAG-$a" >/dev/null 2>&1; then
+              have="$have $BASE:$TAG-$a"
+            else
+              echo "  缺 $BASE:$TAG-$a"
+            fi
+          done
+
+          n=$(echo $have | wc -w | tr -d ' ')
+          if [ "$n" -lt 2 ]; then
+            echo
+            echo "  只有 $n 个架构，先不做清单。"
+            echo "  等另一个架构也推上来，再跑一次这个架构（或那个架构）就会自动合成。"
+            exit 0
+          fi
+
+          echo "  用这两个合成：$have"
+          docker buildx imagetools create -t "$BASE:$TAG" $have
+          echo
+          echo "  ── 合成结果 ──"
+          docker buildx imagetools inspect "$BASE:$TAG"
 
       - name: 没有勾 push
         if: ${{ !inputs.push }}
