@@ -197,8 +197,27 @@ def publish(zst: Path, flavor: str, arch: str, go: bool = False) -> str:
             rclone_cmd[i:i] = ["-v", f"{stage}:/staging"]
             src = "/staging"
 
+        # ★ S3 的分段上传参数——**和 packages/scripts/deploy.sh 里那一组是同一套**。
+        #
+        #   少了它们，大于 ~50 MB 的文件会被对象存储/前面的 nginx 直接拒掉：
+        #
+        #       ERROR : minimal-x86_64-…img.zst: Failed to copy:
+        #           operation error S3: PutObject, https response error
+        #               StatusCode: 413
+        #
+        #   413 是 Payload Too Large，长得完全不像"上传方式不对"。
+        #
+        #   ★ 这是【第三次】在 repo.py 里补 deploy.sh 已经有的东西了：
+        #       ① 逐个 -e 传环境变量
+        #       ② 把源目录挂进容器
+        #       ③ 这一组分段上传参数
+        #     两处都是"往同一个仓库推文件"，本来就该共用一套参数。
+        #     每次都是撞上才知道——**它们的形状是"那边能跑"，所以没人会去比。**
         cmd = (rclone_cmd + ["copy", src, dest + "/",
-                             "--s3-no-check-bucket", "--stats-one-line"])
+                             "--s3-no-check-bucket", "--stats-one-line",
+                             "--s3-upload-cutoff", "8Mi",
+                             "--s3-chunk-size", "5Mi",
+                             "--s3-upload-concurrency", "4"])
         rc, _ = run_streaming(cmd, env=env)
         if rc != 0:
             die(f"上传失败（退出码 {rc}）")
