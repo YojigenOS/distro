@@ -186,11 +186,23 @@ jobs:
         run: ./pantsu/pantsu img "$FLAVOR" --arch "$ARCH" --size "$SIZE"
 
       # ── 3. 启动一次（真正的验收）──────────────────────────────────────
+      # ★ 第二句断言（「✓ 拿到地址」）为什么和第一句一样重要。
+      #
+      #   第一句验的是"它起来了"，第二句验的是"它连得上"。而这两件事
+      #   没有蕴含关系——**起得来但连不上的系统，在云主机上就是一块砖**：
+      #   没有串口，只剩 VNC，而 VNC 要控制台密码。
+      #
+      #   实测就漏过这一整条：镜子里没有 DHCP 客户端（连 ip 命令都没有），
+      #   而 CI 一路绿——因为 QEMU 那边【根本没给虚拟机网卡】，
+      #   被验的对象不存在，自然验不出问题。
+      #
+      #   `vm.py` 现在会加一块 user-mode 网卡，客户机走 DHCP 拿 10.0.2.15。
       - name: 启动一次（这一步才是验收）
         run: |
           ./pantsu/pantsu vm "$FLAVOR" --arch "$ARCH" \
               --serial-file /tmp/boot.log --timeout 600 \
-              --expect "欢迎来到 Yojigen OS"
+              --expect "欢迎来到 Yojigen OS" \
+          --expect "✓ 拿到地址"
 
       - name: 启动日志
         if: always()
