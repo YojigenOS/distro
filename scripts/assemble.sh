@@ -130,7 +130,12 @@ docker import \
 
 echo "  标签:    cn.yojigen.os.flavor=${FLAVOR}  arch=${ARCH}"
 echo "           org.opencontainers.image.created=${BUILT}"
-[ -n "$REVISION" ] && echo "           org.opencontainers.image.revision=${REVISION:0:12}"
+# ★ `${REVISION:0:12}` 是 bash 的子串扩展，dash 不支持：
+#       ./scripts/assemble.sh: 133: Bad substitution
+#   用 cut —— POSIX 里一直有。
+if [ -n "$REVISION" ]; then
+    echo "           org.opencontainers.image.revision=$(printf '%s' "$REVISION" | cut -c1-12)"
+fi
 
 docker images "${NAME}:${TAG}" --format '      ✓ {{.Repository}}:{{.Tag}}  {{.Size}}'
 
