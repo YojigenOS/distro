@@ -170,8 +170,26 @@ def publish(zst: Path, flavor: str, arch: str, go: bool = False) -> str:
 
         print()
         log("上传", f"{rclone}  →  {dest}/")
-        cmd = (rclone.split() + ["copy", str(stage), dest + "/",
-                                 "--s3-no-check-bucket", "--stats-one-line"])
+
+        # ★ 用容器时，暂存目录必须【挂进去】，源路径也要换成容器里的那个。
+        #
+        #   容器里看不到宿主的 /tmp：
+        #
+        #       ERROR : Local file system at /tmp/pantsu-img-1cgv4o7j:
+        #           error reading source root directory: directory not found
+        #
+        #   ★ 这和上面逐个 -e 传变量是同一件事的两半：**起容器时，凡是要被
+        #     容器用到的东西——环境变量、路径——都得显式交给它。**
+        #     `deploy.sh` 那边挂的是固定的 $PWD/var/repo，所以那半它天然没
+        #     这个问题；rclone 用宿主的 /tmp 就得动态挂。
+        src = str(stage)
+        rclone_cmd = rclone.split()
+        if rclone_cmd[:1] == ["docker"]:
+            rclone_cmd += ["-v", f"{stage}:/staging"]
+            src = "/staging"
+
+        cmd = (rclone_cmd + ["copy", src, dest + "/",
+                             "--s3-no-check-bucket", "--stats-one-line"])
         rc, _ = run_streaming(cmd, env=env)
         if rc != 0:
             die(f"上传失败（退出码 {rc}）")
