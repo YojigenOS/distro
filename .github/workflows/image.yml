@@ -220,9 +220,22 @@ jobs:
 
           echo
           echo "  ── ② 公钥放进根的 authorized_keys ──"
-          install -d -m 700 "$ROOT/root/.ssh"
-          cat /tmp/testkey.pub >> "$ROOT/root/.ssh/authorized_keys"
-          chmod 600 "$ROOT/root/.ssh/authorized_keys"
+          # ★★ 属主必须是 root。
+          #
+          #   这一行我第一版写漏了：追加公钥是【以 runner 身份】做的，于是
+          #   文件的属主变成 runner。而 sshd 的 StrictModes 要求
+          #   authorized_keys 属于目标用户（root）——属主不对就【静默拒绝】：
+          #
+          #       root@127.0.0.1: Permission denied (publickey,password)
+          #
+          #   而内容是【完全正确】的（2 行、chmod 600），所以只会去查别处。
+          #
+          #   ★ 和 /var/empty 那个是同一类：**内容对，元数据不对**。
+          #     sshd 检查的从来不只是内容。
+          sudo install -d -m 700 -o root -g root "$ROOT/root/.ssh"
+          sudo sh -c "cat /tmp/testkey.pub >> '$ROOT/root/.ssh/authorized_keys'"
+          sudo chown root:root "$ROOT/root/.ssh/authorized_keys"
+          sudo chmod 600 "$ROOT/root/.ssh/authorized_keys"
 
           echo "  ── ③ chroot 里跑真的那个钩子 ──"
           # ★ 必须在【自己的网络命名空间】里跑。
@@ -261,6 +274,10 @@ jobs:
             echo "  ✗ 连不上。查一下："
             echo "      shadow 里 root 是: $(sudo awk -F: '$1=="root"{print $2}' "$ROOT/etc/shadow")"
             echo "      authorized_keys:   $(sudo wc -l < "$ROOT/root/.ssh/authorized_keys") 行"
+            echo "        属主/权限:       $(sudo stat -c '%U:%G %a' "$ROOT/root/.ssh/authorized_keys")"
+            echo "        .ssh 目录:       $(sudo stat -c '%U:%G %a' "$ROOT/root/.ssh")"
+            echo "        /var/empty:      $(sudo stat -c '%U:%G %a' "$ROOT/var/empty" 2>/dev/null || echo 没有)"
+            echo "        sshd 配置检查:   $(sudo chroot "$ROOT" /usr/sbin/sshd -t 2>&1 | head -2 || echo 通过)"
             echo "      sshd 在跑吗:       $(pgrep -a sshd || echo 没在跑)"
             exit 1
           fi
