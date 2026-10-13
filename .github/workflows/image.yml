@@ -182,6 +182,75 @@ jobs:
           echo
           echo "  ✓ 这个系统能用 apk 装软件"
 
+      # ── 验收：真的能 SSH 进去吗 ──────────────────────────────────────────
+      #
+      # ★★ 为什么这一步必须有。
+      #
+      #   前面那句「sshd 已启动」是【它自己说的】——而真机上撞到的是：
+      #   系统起来了、sshd 起来了、公钥也在 /root/.ssh/authorized_keys 里，
+      #   **但钥匙被拒**：
+      #
+      #       root@…: Permission denied (publickey,password,keyboard-interactive)
+      #
+      #   原因在别处：/etc/shadow 里 root 的密码字段是 `!`（锁定），
+      #   而 **sshd 对锁定账号拒绝一切认证，包括公钥**。
+      #   那句注释写着"真机上安装器会设置 root 密码"——**而 DD 通道没有安装器**。
+      #
+      #   而"连不上"在一台云主机上就是变砖。
+      #
+      # ★ 验法是【真的连一次】：
+      #
+      #     ① 临时生成一把钥匙（私钥不进仓库、不进镜像、用完即弃）
+      #     ② 公钥追加进根的 authorized_keys
+      #     ③ 在 chroot 里跑【真的那个钩子】20-sshd
+      #        —— 它会生成主机密钥、解开 root、起 sshd
+      #     ④ 从宿主 ssh 进去跑一条命令
+      #
+      #   用 chroot 而不是 QEMU：快，而且**跑的是一模一样的那个钩子**。
+      #   （QEMU 那条路验的是"能不能启动"，这条验的是"能不能登进去"——
+      #     两件事，前面几个坑都是这种"两件事"。）
+      - name: 验收 —— 真的能 SSH 进去吗
+        run: |
+          set -euo pipefail
+          ROOT="var/${{ inputs.flavor }}/rootfs-${{ inputs.arch }}"
+
+          echo "  ── ① 生成一把临时测试钥匙（用完即弃）──"
+          ssh-keygen -t ed25519 -N '' -f /tmp/testkey -q
+          echo "     $(ssh-keygen -l -f /tmp/testkey.pub)"
+
+          echo
+          echo "  ── ② 公钥放进根的 authorized_keys ──"
+          install -d -m 700 "$ROOT/root/.ssh"
+          cat /tmp/testkey.pub >> "$ROOT/root/.ssh/authorized_keys"
+          chmod 600 "$ROOT/root/.ssh/authorized_keys"
+
+          echo "  ── ③ chroot 里跑真的那个钩子 ──"
+          # sshd 要用 /dev/null、/dev/urandom 这些，chroot 里没有现成的。
+          for d in dev dev/pts proc; do sudo mount --bind "/$d" "$ROOT/$d"; done
+          trap 'for d in proc dev/pts dev; do sudo umount -l "$ROOT/$d" 2>/dev/null || true; done' EXIT
+
+          sudo chroot "$ROOT" /usr/lib/yojigen-os/boot.d/20-sshd || true
+          sleep 1
+
+          echo
+          echo "  ── ④ 从宿主真的连一次 ──"
+          # 钩子里起 sshd 用的端口是默认的 22；chroot 和宿主共享网络栈，
+          # 所以直接连 127.0.0.1:22。CI runner 上 22 没别人占。
+          if ssh -p 22 -i /tmp/testkey \
+                 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                 -o BatchMode=yes -o ConnectTimeout=15 \
+                 root@127.0.0.1 'echo "      从里面回话：$(cat /etc/os-release | grep ^PRETTY_NAME)"' 2>&1; then
+            echo
+            echo "  ✓ 真的登进去了"
+          else
+            echo
+            echo "  ✗ 连不上。查一下："
+            echo "      shadow 里 root 是: $(sudo awk -F: '\$1=="root"{print \$2}' "$ROOT/etc/shadow")"
+            echo "      authorized_keys:   $(sudo wc -l < "$ROOT/root/.ssh/authorized_keys") 行"
+            echo "      sshd 在跑吗:       $(pgrep -a sshd || echo 没在跑)"
+            exit 1
+          fi
+
       - name: 建盘
         run: ./pantsu/pantsu img "$FLAVOR" --arch "$ARCH" --size "$SIZE"
 
