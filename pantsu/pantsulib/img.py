@@ -116,10 +116,10 @@ def _tree_mib(path) -> float:
 # 根本没有 loop 设备，这些活只能在 Linux 里干。
 CONTAINER_SCRIPT = """
 set -eu
-apk add --no-cache util-linux parted e2fsprogs e2fsprogs-extra dosfstools zstd >/dev/null 2>&1
-apk add --no-cache grub >/dev/null 2>&1 || true
-case "$GRUB_TARGETS" in *i386-pc*) apk add --no-cache grub-bios >/dev/null 2>&1 || true ;; esac
-case "$GRUB_TARGETS" in *efi*)     apk add --no-cache grub-efi  >/dev/null 2>&1 || true ;; esac
+apk add --no-cache util-linux parted e2fsprogs e2fsprogs-extra dosfstools zstd </dev/null >/dev/null 2>&1
+apk add --no-cache grub </dev/null >/dev/null 2>&1 || true
+case "$GRUB_TARGETS" in *i386-pc*) apk add --no-cache grub-bios </dev/null >/dev/null 2>&1 || true ;; esac
+case "$GRUB_TARGETS" in *efi*)     apk add --no-cache grub-efi </dev/null  >/dev/null 2>&1 || true ;; esac
 
 # ★ 兜底：脚本中途死掉也要把所有 loop 设备放掉。实测过——失败的运行会把
 #   它们留在 Docker VM 里，攒够几个之后 losetup 就再也拿不到设备了

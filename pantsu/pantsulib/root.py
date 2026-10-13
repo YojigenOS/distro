@@ -78,12 +78,28 @@ cp /keys/*.rsa.pub /newroot/etc/apk/keys/
 mkdir -p /newroot/etc/apk
 printf '%s\\n' "$REPO" > /newroot/etc/apk/repositories
 
+# ★ apk 的行为策略。放这里而不是 apk-tools 包里，判据和上面那条一样：
+#
+#     仓库地址    = 「装哪些仓库」       —— 发行版的决定
+#     interactive = 「升级要不要先问」  —— 也是发行版的决定
+#
+#   上游默认是 auto（看是不是终端：是就问，不是就直接干）。而"从非终端的
+#   连接里一声不吭把库换掉"这件事是实打实撞到的——VNC 控制台那类连接，
+#   stdin 不是终端，于是 apk 认为没人看着。
+#
+#   对一台服务器这个默认不够：升级内核、换库这种事，按回车之前该看一眼。
+#
+#   ★ 而脚本那条路不会因此卡住：apk 读到 EOF 时【接受】它（源码里
+#     `r != EOF` 不算拒绝），接着往下走。下面那处 apk add 另外显式加了
+#     </dev/null，双保险。
+printf 'interactive yes\n' > /newroot/etc/apk/config
+
 # ★ 不用 --allow-untrusted —— 真的验签。
 apk add --keys-dir /newroot/etc/apk/keys \\
     --repository "$REPO" \\
     --root /newroot \\
     --initdb \\
-    $PKGS
+    $PKGS </dev/null
 
 echo
 echo "── 装出来的根 ──"
