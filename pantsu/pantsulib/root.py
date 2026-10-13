@@ -114,8 +114,8 @@ apk --root /newroot audit --system 2>&1 | head -10 || true
     echo "# 生成 $BUILD_DATE"
     echo "#"
     awk -F: '/^P:/{p=$2} /^V:/{print p "-" $2}' /newroot/lib/apk/db/installed | sort
-} > /newroot/etc/yojigenos-manifest
-echo "   清单: $(grep -c '^[^#]' /newroot/etc/yojigenos-manifest) 个包 → /etc/yojigenos-manifest"
+} > /newroot/etc/yojigen-os-manifest
+echo "   清单: $(grep -c '^[^#]' /newroot/etc/yojigen-os-manifest) 个包 → /etc/yojigen-os-manifest"
 
 # ★ 确定性：排序 + 固定属主 + 固定时间戳 + 去掉 PAX 头里的 atime/ctime。
 #   一条都不能少，理由见 packages 的决策记录 0005。

@@ -31,7 +31,7 @@ reinstall 的 dd 模式把这张镜像原样写进硬盘，一个字节都不改
 **② 裸内核的 `root=` 不认文件系统 UUID。** 没有 initramfs 就没有用户态去解析
    `UUID=…`；内核源码 `block/early-lookup.c` 的注释原话是
    *"This does not search by filesystem UUIDs."*。它只认 `/dev/…`、`PARTUUID=`、
-   `PARTLABEL=`。所以 cmdline 用 **`root=PARTLABEL=yojigenos-root`**——顺带可读、
+   `PARTLABEL=`。所以 cmdline 用 **`root=PARTLABEL=yojigen-os-root`**——顺带可读、
    可复现（不用读随机 UUID）。内核 panic 时打印的那串其实就是 PARTUUID，是提示。
 
 **③ 文件系统比分区大 1 MiB。** `parted` 的 `100%` 会**忽略末尾不足 1 MiB 的部分**，
@@ -145,7 +145,7 @@ parted -s "$IMG" mkpart esp fat32 ${ESP_START}MiB ${ESP_END}MiB
 parted -s "$IMG" set 1 esp on
 parted -s "$IMG" mkpart bios ${BIOS_START}MiB ${BIOS_END}MiB
 parted -s "$IMG" set 2 bios_grub on
-parted -s "$IMG" mkpart yojigenos-root ext4 ${ROOT_START}MiB ${ROOT_END}MiB
+parted -s "$IMG" mkpart yojigen-os-root ext4 ${ROOT_START}MiB ${ROOT_END}MiB
 
 DISK=$(losetup -f --show "$IMG")
 ESP=$(losetup -f --show --offset $((ESP_START*1048576))  --sizelimit $(( (ESP_END-ESP_START)*1048576 ))   "$IMG")
@@ -155,7 +155,7 @@ echo "  盘 $DISK · ESP $ESP · root $ROOT"
 mkfs.vfat -F32 -n ESP "$ESP" >/dev/null
 # metadata_csum_seed 会让老 GRUB 掉 rescue；orphan_file 是另一个著名的
 # GRUB 兼容性坑。关掉两个都是零成本保险。
-mkfs.ext4 -q -F -b 4096 -L yojigenos-root -O ^metadata_csum_seed,^orphan_file "$ROOT"
+mkfs.ext4 -q -F -b 4096 -L yojigen-os-root -O ^metadata_csum_seed,^orphan_file "$ROOT"
 
 mkdir -p /os /esp
 mount "$ROOT" /os
@@ -179,7 +179,7 @@ terminal_output console serial
 
 menuentry "Yojigen OS" {
     search --fs-uuid --set=root $ROOT_UUID
-    linux /boot/$KERNEL_NAME console=tty0 console=$CONSOLE,115200 root=PARTLABEL=yojigenos-root rootfstype=ext4 rw init=/init
+    linux /boot/$KERNEL_NAME console=tty0 console=$CONSOLE,115200 root=PARTLABEL=yojigen-os-root rootfstype=ext4 rw init=/init
 }
 EOF
 cp /os/boot/grub/grub.cfg /tmp/efi.cfg

@@ -48,7 +48,7 @@ class TestFlavorLoading(unittest.TestCase):
         self.assertEqual(v["_kind"], "disk")
         # 启动链上的三样必须在——它们少了系统就起不来，而"少了"这件事
         # 在装根那一步是看不出来的。
-        for p in ("yojigenos-init", "linux", "util-linux"):
+        for p in ("yojigen-os-init", "linux", "util-linux"):
             self.assertIn(p, v["packages"])
 
     def test_文件名和_name_不一致要报错(self):
