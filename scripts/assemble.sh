@@ -99,27 +99,31 @@ if command -v git >/dev/null 2>&1; then
     REVISION=$(git -C "$(dirname "$0")/.." rev-parse HEAD 2>/dev/null || true)
 fi
 
-LABEL_ARGS=(
-    # ★ 值里有空格就必须加引号。`docker import -c "LABEL ..."` 会【按空格切】，
-    #   不加引号报的是：
-    #       Error response from daemon: Syntax error - can't find = in "OS"
-    #   而那句错误只提到 OS，看不出是 title 那一行长什么样。实测过。
-    -c "LABEL org.opencontainers.image.title=\"Yojigen OS ${FLAVOR}\""
-    -c "LABEL org.opencontainers.image.version=${TAG}"
-    -c "LABEL org.opencontainers.image.created=${BUILT}"
-    -c "LABEL org.opencontainers.image.source=https://github.com/YojigenOS/distro"
-    -c "LABEL org.opencontainers.image.url=https://os.yojigen.cn"
-    -c "LABEL cn.yojigen.os.flavor=${FLAVOR}"
-    -c "LABEL cn.yojigen.os.arch=${ARCH}"
-    -c "LABEL cn.yojigen.os.built=${BUILT}"
-)
-[ -n "$REVISION" ] && LABEL_ARGS+=(-c "LABEL org.opencontainers.image.revision=${REVISION}")
-
-docker import \
+# ★ 不能用数组（`LABEL_ARGS=(...)`）——**这个脚本在 CI 上是 sh(dash) 跑的**，
+#   dash 没有数组，报的是：
+#
+#       ./scripts/assemble.sh: 102: Syntax error: "(" unexpected
+#
+#   我本地用 bash -n 验过，过了——**因为是拿 bash 验的**。这类"验过了"要小心：
+#   验的语言和跑的语言不是一回事时，它什么也没证明。
+#
+#   用 POSIX 的 `set --`：位置参数本来就是"可变长度的参数列表"。
+set -- \
     -c "ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     -c "ENV LANG=C.UTF-8" \
-    -c "CMD [\"/bin/sh\"]" \
-    "${LABEL_ARGS[@]}" \
+    -c 'CMD ["/bin/sh"]' \
+    -c "LABEL org.opencontainers.image.title=\"Yojigen OS ${FLAVOR}\"" \
+    -c "LABEL org.opencontainers.image.version=${TAG}" \
+    -c "LABEL org.opencontainers.image.created=${BUILT}" \
+    -c "LABEL org.opencontainers.image.source=https://github.com/YojigenOS/distro" \
+    -c "LABEL org.opencontainers.image.url=https://os.yojigen.cn" \
+    -c "LABEL cn.yojigen.os.flavor=${FLAVOR}" \
+    -c "LABEL cn.yojigen.os.arch=${ARCH}" \
+    -c "LABEL cn.yojigen.os.built=${BUILT}"
+
+[ -n "$REVISION" ] && set -- "$@" -c "LABEL org.opencontainers.image.revision=${REVISION}"
+
+"$@" \
     "${TAR}" \
     "${NAME}:${TAG}" > /dev/null
 
