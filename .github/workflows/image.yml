@@ -225,11 +225,25 @@ jobs:
           chmod 600 "$ROOT/root/.ssh/authorized_keys"
 
           echo "  ── ③ chroot 里跑真的那个钩子 ──"
+          # ★ 必须在【自己的网络命名空间】里跑。
+          #
+          #   GitHub 的 runner 自己有一个 sshd（`/usr/sbin/sshd -D`）占着 22 端口。
+          #   不隔离的话有两件事同时发生：
+          #     · 我们的 sshd 起不来（22 被占）
+          #     · 而我们连 127.0.0.1:22 连到的是【runner 那个】，
+          #       它当然不认识我们的钥匙 —— 于是报"钥匙被拒"，看着像我们的 bug
+          #
+          #   实测就是这么骗过一次：那一轮的真实原因是被连错了对象。
+          #
+          #   unshare -n 给一个新的网络命名空间，里面只有 lo。sshd 能绑 22，
+          #   而我们也只能连到它。**验的对象这才真的是我们的。**
+          NS="sudo unshare -n --"
           # sshd 要用 /dev/null、/dev/urandom 这些，chroot 里没有现成的。
           for d in dev dev/pts proc; do sudo mount --bind "/$d" "$ROOT/$d"; done
           trap 'for d in proc dev/pts dev; do sudo umount -l "$ROOT/$d" 2>/dev/null || true; done' EXIT
 
-          sudo chroot "$ROOT" /usr/lib/yojigen-os/boot.d/20-sshd || true
+          # 注意：chroot 和它起的 sshd 都得在同一个命名空间里。
+          $NS chroot "$ROOT" /usr/lib/yojigen-os/boot.d/20-sshd || true
           sleep 1
 
           echo
@@ -245,7 +259,7 @@ jobs:
           else
             echo
             echo "  ✗ 连不上。查一下："
-            echo "      shadow 里 root 是: $(sudo awk -F: '\$1=="root"{print \$2}' "$ROOT/etc/shadow")"
+            echo "      shadow 里 root 是: $(sudo awk -F: '$1=="root"{print $2}' "$ROOT/etc/shadow")"
             echo "      authorized_keys:   $(sudo wc -l < "$ROOT/root/.ssh/authorized_keys") 行"
             echo "      sshd 在跑吗:       $(pgrep -a sshd || echo 没在跑)"
             exit 1
