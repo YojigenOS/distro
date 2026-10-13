@@ -14,7 +14,7 @@
 # `pantsu rootfs minimal` 就会告诉你现在卡在哪一档：
 #
 #   ✅ 已发布          base 那一套（13 个包 + dash），线上仓库里就有
-#   ⚠️ 建好了没发布    util-linux · yojigenos-init · linux
+#   ⚠️ 建好了没发布    util-linux · yojigen-os-init · linux
 #                      —— 产物在 packages/var/output/aarch64/ 里躺着，
 #                         缺的只是"打包 + 发布"这一步（release workflow）
 #   ✗  还没有配方      grub · openssh
@@ -57,7 +57,7 @@ packages = [
 
   # ── 启动链 ────────────────────────────────────────────────────────
   # /init ——内核把控制权交给用户空间之后跑的第一个程序。
-  "yojigenos-init",
+  "yojigen-os-init",
   # mount / blkid / agetty / sfdisk。前两个是 /init 自己要用的（它已经在
   # 依赖里声明了），后两个是"人能看到输出"和"将来首启扩容"要用的。
   "util-linux",
@@ -80,7 +80,7 @@ packages = [
   # 落地时有两件事在 packages 那一侧（写配方的人别忘）：
   #   1. sshd 需要特权分离用户 `sshd`，而 shadow 包还没建。最省的办法是
   #      打包时静态写进 /etc/passwd + 建 /var/empty。
-  #   2. host key 在首启生成（见 yojigenos-firstboot 那一类包），不是烤进
+  #   2. host key 在首启生成（见 yojigen-os-firstboot 那一类包），不是烤进
   #      镜像的——同一个 host key 发给所有人等于没有。
   "openssh",
 
