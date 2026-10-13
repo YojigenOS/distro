@@ -36,7 +36,17 @@ packages = [
   # 目录骨架最先——它提供 /usr、/etc，以及 /lib → usr/lib 这些 usr-merge
   # 链接，后面每个包的 ELF 里写死的 interpreter 路径都靠它解析。
   "filesystem",
-
+  # ★ apk-tools 必须在【被装进盘里的】那一侧。
+  #
+  #   没有它，系统起来了但【装不了任何软件】：
+  #     · /etc/apk/repositories   有（组装时写进去了）
+  #     · /etc/apk/keys/          有（公钥烤进去了）
+  #     · /lib/apk/db/installed   有（装的时候留下的数据库）
+  #     · 但 /sbin/apk            ✗ 没有
+  #
+  #   ★ 没有任何配方依赖它——它不会被依赖带进来，只能显式声明。
+  #     base.toml 里是显式写了的，minimal 里漏了。
+  "apk-tools",
   "glibc",
   # 中文优先在产物层面最直接的体现。它是**独立子包**，所以"要不要翻译"
   # 就是这一行的事——原来那套"拼装期删 61 种语言的 .mo"因此没有了。
