@@ -282,7 +282,7 @@ jobs:
             echo
             echo "  ✗ 连不上。查一下："
             echo "      shadow 里 root 是: $(sudo awk -F: '$1=="root"{print $2}' "$ROOT/etc/shadow")"
-            echo "      authorized_keys:   $(sudo wc -l < "$ROOT/root/.ssh/authorized_keys") 行"
+            echo "      authorized_keys:   $(sudo sh -c "wc -l < '$ROOT/root/.ssh/authorized_keys'") 行"
             echo "        属主/权限:       $(sudo stat -c '%U:%G %a' "$ROOT/root/.ssh/authorized_keys")"
             echo "        .ssh 目录:       $(sudo stat -c '%U:%G %a' "$ROOT/root/.ssh")"
             echo "        /var/empty:      $(sudo stat -c '%U:%G %a' "$ROOT/var/empty" 2>/dev/null || echo 没有)"
