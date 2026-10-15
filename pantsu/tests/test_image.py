@@ -203,8 +203,6 @@ class Test组装(会报错的混入, unittest.TestCase):
         self.assertTrue(re.search(r"docker run -it --rm .*# 进去看看", 文本))
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 class Test标签的写和查不许分叉(unittest.TestCase):
     """★ 这是这次真正的修法。
@@ -248,3 +246,7 @@ class Test标签的写和查不许分叉(unittest.TestCase):
             with self.subTest(label=a):
                 k, _, v = a[len("LABEL "):].partition("=")
                 self.assertTrue(v.strip(), f"标签 {k} 的值是空的")
+
+
+if __name__ == "__main__":
+    unittest.main()
