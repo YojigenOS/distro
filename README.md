@@ -119,7 +119,41 @@ python3 -m unittest discover -s tests          # 仓库级的检查（调用点�
 
 和 `packages/skirt/tests/` 一样的分工：**不需要 docker、不联网、不动产物**的那些
 逻辑放在单元测试里；真跑一次才算数的（装根、建盘、起 QEMU、发布）留给 CI 的
-workflow，测试里只留下 `skip` 和一句"为什么"。
+workflow，测试里只留下 `skip` 和一句「为什么」。
+
+### 那三条"真跑一次"的测试：`PANSU_INTEGRATION`
+
+装根到打 tar · 真建一张盘 · 真启一台 QEMU —— 这三条挂在同一个环境变量上，分别在
+`pantsu/tests/test_root.py` · `test_img.py` · `test_vm.py` 的 `Test没测到的` 那个类里。
+本机想跑就显式打开：
+
+```bash
+PANSU_INTEGRATION=1 python3 -m unittest discover -s pantsu/tests
+PANSU_INTEGRATION=1 python3 pantsu/tests/test_img.py      # 或者单跑某一个文件
+```
+
+不给它，它们就 `skip`。**那不是"忘了跑"，是故意的**：
+
+```
+① 它们要真东西：docker 在跑、网通到 apk 仓库、还得有一个装好的根当输入
+   —— 而这一档的规矩是「不需要 docker、不联网、不动产物」
+② 它们会往 var/ 里写几百 MB 真产物 —— 随手跑一次，代价是"以为它只是单元测试"
+```
+
+**CI 也不开它**（2026-10-15 核过：`distro/.github/workflows/*.yml` 里没有
+`PANSU_INTEGRATION`，`test.yml` 只跑上面那两条 `discover`）。理由和 packages 那边
+`SKIRT_TEST_PACK` 是同一条 —— 那边写在 `packages/.github/workflows/test.yml` 里：
+**「一条会被网络拖住、还会偶发失败的检查，在 push 时每次跑，很快就没人看它的红灯了」。**
+
+而那三样在 CI 上不是没人跑，是有更实的路在跑：
+
+```
+image.yml     rootfs（真仓库）→ 建盘 → vm --expect（串口断言它真起来了）→ publish
+release.yml   assemble → verify（在镜像里跑一遍）
+```
+
+**那边验的是真产物，比一条单元测试更硬。** 这里留 `skip`，是为了让"没测到什么"
+是一个摆明的事实，而不是一个没人提起的空白。
 
 ## 相关
 
