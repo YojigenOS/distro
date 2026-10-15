@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 REPO = ROOT.parent
 
 #: 六个子命令。**这份名单动过就要跟着改**——它同时是"入口注册了哪些功能"的清单。
-子命令 = ("flavors", "flavor", "rootfs", "img", "publish", "vm")
+子命令 = ("flavors", "flavor", "rootfs", "img", "publish", "verify", "vm")
 
 
 def 跑(*args: str) -> subprocess.CompletedProcess:

@@ -100,7 +100,7 @@ pantsu 只认那一个 URL——不 checkout 配方、不读 `var/output/`、不
 ```
 variants/              风味：哪些包、什么形态
 pantsu/                本仓库的驱动（skirt 的兄弟：那边建包，这边建系统）
-scripts/               薄壳：跑 VM（macOS 双击用的那个 .command）
+scripts/               macOS 双击用的那个 .command（唯一的壳）
 keys/                  会烤进交付物的签名公钥
 tests/                 仓库级的检查（调用点、shell 脚本的写法）
 docs/

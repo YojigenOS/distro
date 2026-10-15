@@ -103,9 +103,12 @@ jobs:
       # 动态链接解析得了吗。
       #
       # ★ 不检查具体版本号 —— 版本会变，而"能不能用"不该跟着变。
+      #
+      # 里面那层（喂进镜像的 POSIX sh）在 pantsulib/verify.py 里：
+      # 一份 payload，`verify` 和 `rootfs --probe` 两处用。
       - name: 验证 —— 在镜像里跑一遍
         run: |
-          ./scripts/verify.sh "yojigenos/${{ inputs.flavor }}:${{ inputs.tag }}" \
+          ./pantsu/pantsu verify "yojigenos/${{ inputs.flavor }}:${{ inputs.tag }}" \
               --flavor "${{ inputs.flavor }}"
 
       - name: 记录镜像身份

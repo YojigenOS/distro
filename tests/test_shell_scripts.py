@@ -7,8 +7,9 @@
 这个坑在 packages 仓库里踩过一次（run-vm.sh 因此从来没有启动过 QEMU），
 修完在 packages 侧加了检查——**但那个检查只扫 packages 的脚本**。
 
-2026-10-12：同一个坑在 distro 的 assemble.sh 里又发作了一次。所以这条检查
-要跟着【脚本】走，不是跟着仓库走。两个仓库各放一份。
+2026-10-12：同一个坑在 distro 的 assemble.sh 里又发作了一次（那份脚本
+2026-10-15 收进了 pantsulib/image.py，坑随之消失）。所以这条检查要跟着
+【脚本】走，不是跟着仓库走。两个仓库各放一份。
 """
 
 from __future__ import annotations

@@ -3,7 +3,8 @@
 ★ 为什么值得单独写一个测试。
 
    `scripts/assemble.sh` 的 shebang 是 `#!/bin/sh`，CI 上是 dash。我往里写了
-   两个 bash 才有的东西，都在真跑的时候才炸：
+   两个 bash 才有的东西，都在真跑的时候才炸（那份脚本 2026-10-15 收进了
+   `pantsulib/image.py`，这个坑因此消失了——但检查留着，它还要看别的 sh）：
 
        LABEL_ARGS=(...)           → Syntax error: "(" unexpected
        ${REVISION:0:12}           → Bad substitution

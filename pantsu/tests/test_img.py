@@ -28,7 +28,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from support import 会报错的混入  # noqa: E402
+from support import 安静, 会报错的混入  # noqa: E402
 
 from pantsulib import img  # noqa: E402
 
@@ -140,7 +140,8 @@ class Test建盘前的检查(会报错的混入, unittest.TestCase):
             假根(Path(tmp), "x86_64")
             with mock.patch.object(img, "VAR_DIR", Path(tmp)), \
                  mock.patch.object(img, "ROOT", Path(tmp)), \
-                 mock.patch.object(img, "run_streaming", lambda *a, **k: (1, "")):
+                 mock.patch.object(img, "run_streaming", lambda *a, **k: (1, "")), \
+                 安静():
                 # 容器那一步故意失败——这里只关心它在预检里【没被拦下】
                 msg = self.应当报错(img.build, "minimal", "x86_64", size="1G")
         self.assertIn("建盘失败", msg)

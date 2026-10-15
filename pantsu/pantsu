@@ -15,6 +15,8 @@ skirt 建包；pantsu 建系统。
     pantsu/pantsu img <名> --publish --go       真的传到 repo.os.yojigen.cn
     pantsu/pantsu publish <名>                  把已建好的镜像放进仓库（干跑）
     pantsu/pantsu publish <名> --go             同上，真传（CI 里就是这么用的）
+    pantsu/pantsu verify <镜像>                 验一个容器镜像：元数据 + 在镜像里跑一遍
+    pantsu/pantsu verify <镜像> --flavor base   顺带核对风味标签（对不对得上）
     pantsu/pantsu vm <名>                       在 QEMU 里跑起来（默认启磁盘镜像）
     pantsu/pantsu vm <名> --mode direct         内核 + initramfs 直启（改完用户态马上看）
 
@@ -39,10 +41,7 @@ skirt 建包；pantsu 建系统。
     img.py      把根变成磁盘镜像（0013 那条路：混合 GPT + 引导器）
     repo.py     把镜像放进仓库（repo.os.yojigen.cn，rclone）
     vm.py       在 QEMU 里跑起来（启镜像 / 内核直启）
-
-还没有的（下一刀）:
-    image.py    容器交付物（本地还在 scripts/assemble.sh 里；
-                CI 那条线在 .github/workflows/release.yml）
+    verify.py   验交付物（镜像里跑一遍；那段 payload 和 rootfs --probe 共用）
 """
 
 from __future__ import annotations
@@ -55,7 +54,7 @@ from pathlib import Path
 # 允许直接以脚本方式运行（./pantsu/pantsu），无需安装
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from pantsulib import flavor, img, repo, root, vm
+from pantsulib import flavor, img, repo, root, verify, vm
 from pantsulib.common import DEFAULT_REPO, LOCAL_REPO, VAR_DIR, resolve_arch
 
 
@@ -75,7 +74,7 @@ def main() -> None:
     r.add_argument("--repo", default=DEFAULT_REPO,
                    help=f"apk 仓库 URL（默认 {DEFAULT_REPO}；本地调试用 {LOCAL_REPO}）")
     r.add_argument("--probe", action="store_true",
-                   help="装完导入成临时镜像，跑一遍 scripts/verify-in-image.sh")
+                   help="装完导入成临时镜像，跑一遍 verify.IN_IMAGE_SCRIPT（和 pantsu verify 同一条）")
     r.add_argument("--skip-missing", action="store_true",
                    help="过渡期用：仓库里还没有的包跳过，并大声报出来")
 
@@ -96,6 +95,10 @@ def main() -> None:
     pb.add_argument("--arch", help="默认宿主架构")
     pb.add_argument("--img", help="指定镜像文件（默认 var/<风味>/<风味>-<架构>.img.zst）")
     pb.add_argument("--go", action="store_true", help="真的传（不加就只列要传什么）")
+
+    v = sub.add_parser("verify", help="验一个容器镜像（元数据 + 在镜像里跑一遍）")
+    v.add_argument("image", help="镜像名，例如 yojigenos/base:edge")
+    v.add_argument("--flavor", help="顺便核对风味标签：对不上说明传错镜像了")
 
     m = sub.add_parser("vm", help="在 QEMU 里把它跑起来（镜像或直启）")
     m.add_argument("name")
@@ -125,6 +128,8 @@ def main() -> None:
                         out=a.out, size=a.size, kernel=a.kernel)
         if a.publish:
             repo.publish(zst, a.name, resolve_arch(a.arch), go=a.go)
+    elif a.cmd == "verify":
+        verify.verify(a.image, a.flavor)
     elif a.cmd == "publish":
         arch = resolve_arch(a.arch)
         zst = Path(a.img) if a.img else (VAR_DIR / a.name / f"{a.name}-{arch}.img.zst")

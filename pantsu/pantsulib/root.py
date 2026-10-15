@@ -34,7 +34,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import flavor
+from . import flavor, verify
 from .common import (
     DEFAULT_REPO, KEYS_DIR, LOCAL_REPO, PROBE_IMAGE, ROOT, TAR_MTIME,
     TOOL_IMAGE, VAR_DIR, die, log, resolve_arch, run, run_streaming, warn,
@@ -299,20 +299,15 @@ def build(name: str, arch_requested: str | None = None, repo: str = DEFAULT_REPO
 # ── 探测 ──────────────────────────────────────────────────────────────────
 
 def _probe(name: str, arch: str, tar_path: Path) -> None:
-    """把它导成一个临时镜像，跑一遍 scripts/verify-in-image.sh。
+    """把它导成一个临时镜像，跑一遍容器里那套检查（`verify.IN_IMAGE_SCRIPT`）。
 
     为什么用这个法子：**"装成功、tar 成"都不能说明里面的东西能跑**。而
-    verify-in-image.sh 已经在检查那件真正要命的事——关键二进制的动态链接
-    解析得了吗（`ldd` 里有没有 'not found'）。gawk 少 libmpfr 那次，就是
-    这类检查才抓得到的。
+    那段脚本已经在检查那件真正要命的事——关键二进制的动态链接解析得了吗
+    （`ldd` 里有没有 'not found'）。gawk 少 libmpfr 那次，就是这类检查才抓得到的。
 
-    ★ 复用同一份脚本，不另写一份：容器交付物那边（scripts/verify.sh）喂给
-      `docker run` 的 stdin 也是它。一份脚本，两处用。
+    ★ 复用同一份，不另写一份：`pantsu verify` 喂给 `docker run` 的 stdin 也是
+      它。一份 payload，两处用。
     """
-    script = ROOT / "scripts" / "verify-in-image.sh"
-    if not script.is_file():
-        die(f"找不到 {script.relative_to(ROOT)}")
-
     tag = f"{PROBE_IMAGE}:{name}-{arch}"
     print()
     log("探测", f"导入成临时镜像 {tag}（不是交付物，不会推）")
@@ -324,12 +319,12 @@ def _probe(name: str, arch: str, tar_path: Path) -> None:
          "-c", 'CMD ["/bin/sh"]',
          str(tar_path), tag])
 
-    log("探测", "在镜像里跑 scripts/verify-in-image.sh")
+    log("探测", "在镜像里跑那套检查（和 pantsu verify 同一份）")
     # --platform：被探测的根可能是【另一个架构】（比如在 Mac 上验 x86_64 的根）。
     # 不写的话 docker 会按宿主架构给它打标签，运行时报 exec format error。
     rc, _ = run_streaming(["docker", "run", "--rm", "-i",
                              "--platform", f"linux/{arch}", tag, "/bin/sh"],
-                          stdin_text=script.read_text())
+                          stdin_text=verify.IN_IMAGE_SCRIPT)
     if rc != 0:
         die(
             f"探测没过（退出码 {rc}）——这个根不能当交付物。\n"
