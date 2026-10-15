@@ -181,6 +181,29 @@ serial --unit=0 --speed=115200
 terminal_input console serial
 terminal_output console serial
 
+# ★★ 读 custom.cfg —— 2026-10-15 加的，而它是【GRUB 通用的那个扩展点】。
+#
+#   少了这三行的后果是实打实的：一台机器【装不进去】。
+#
+#   实测（那天晚上在真机 TX 上跑 reinstall.sh）：它把一次性入口写进了
+#   /boot/grub/custom.cfg、把内核和 initrd 放在根上、把 grubenv 的
+#   next_entry 设成 "reinstall (dd)" —— **三样都对**，而 GRUB 什么都没做，
+#   因为**它从来没读过那个文件**。于是重启之后又回到原来的系统，
+#   而日志里看不出任何异常。
+#
+#   ★ 而这条只有【真装一次】才会走到：`pantsu vm` 默认走的是 --mode direct
+#     （内核 + initramfs 直启），那条路根本不经过 GRUB ✓。所以 CI 全绿，
+#     而盘上的引导链是断的。
+#
+#   ${config_directory} 是 GRUB 给"主配置所在目录"设的变量；而
+#   grub-mkstandalone 那条路（我们用的就是它）可能没设它，所以补一个
+#   $prefix 的退路。这两行合起来是各发行版 /etc/grub.d/40_custom 里的标准写法。
+if [ -f \\${config_directory}/custom.cfg ]; then
+    source \\${config_directory}/custom.cfg
+elif [ -z "\\${config_directory}" -a -f \\$prefix/custom.cfg ]; then
+    source \\$prefix/custom.cfg
+fi
+
 menuentry "Yojigen OS" {
     search --fs-uuid --set=root $ROOT_UUID
     linux /boot/$KERNEL_NAME console=tty0 console=$CONSOLE,115200 root=PARTLABEL=yojigen-os-root rootfstype=ext4 rw init=/init
