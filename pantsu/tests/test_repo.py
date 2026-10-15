@@ -183,6 +183,34 @@ class Test凭据(会报错的混入, unittest.TestCase):
         self.assertEqual(set(repo.RCLONE_VARS), 那边的名单,
                          "两边的 rclone 变量名单不一样 —— 同一个仓库，两处必须一起改")
 
+    def test_分段上传参数和_skirt_deploy_也是同一套(self):
+        """★ 变量之外，那组【共享的 S3 参数】也要一样。
+
+        为什么值得单独一条：`repo.py` 里自己写着——
+
+            「这是【第三次】在 repo.py 里补 `skirt deploy` 已经有的东西了：
+              ① 逐个 -e 传环境变量 ② 把源目录挂进容器 ③ 这一组分段上传参数。
+              ……每次都是撞上才知道——**它们的形状是"那边能跑"，所以没人会去比。**」
+
+        而"没人会去比"就是这一条要解决的事。
+
+        ★ 而【不同的那些是有意不同的】，所以不要拿整个 argv 去比：
+          `deploy` 推 `.apk`，用 `--checksum`（按内容比，apk 是内容寻址的）；
+          `repo` 推镜像，用 `--s3-no-check-bucket` / `--stats-one-line`。
+          比的是两边都声明为"共享"的那一组。
+        """
+        if not PACKAGES_DEPLOY.is_file():
+            self.skipTest(f"读不到 {PACKAGES_DEPLOY}（CI 只 checkout distro 这一个仓库）"
+                          "——跨仓库那半比对没法做")
+        deploy = _加载_skirt_的_deploy()
+        那边 = getattr(deploy, "SHARED_S3_ARGS", None)
+        self.assertIsNotNone(那边, "packages 那边的 deploy.py 里没有 SHARED_S3_ARGS —— "
+                                   "这一组共享参数的名字变了？")
+        self.assertEqual(tuple(repo.SHARED_S3_ARGS), tuple(那边),
+                         "两边共享的分段上传参数不一样 —— 同一个仓库，两处必须一起改。\n"
+                         "  distro  : " + repr(repo.SHARED_S3_ARGS) + "\n"
+                         "  packages: " + repr(那边))
+
 
 class Test发布(会报错的混入, unittest.TestCase):
 

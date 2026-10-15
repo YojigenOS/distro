@@ -63,6 +63,15 @@ def public_url(flavor: str, arch: str, name: str) -> str:
 # ★ 和 packages/skirt/skirtlib/deploy.py 里那份【是同一套】。两处必须一起改——
 #   一边加了变量另一边没加，症状是"某个字段静默地没生效"，比直接报错难查。
 #   （`pantsu/tests/test_repo.py` 里有一条测试真去比这两份名单。）
+#: ★ 和 `packages/skirt/skirtlib/deploy.py` 里那份【逐字一样】。
+#:   两个仓库没法互相 import，所以靠一条测试守着（见 tests/test_repo.py）。
+#:   为什么是这三个、以及那个"每次都是撞上才知道"的来历，见那边 `deploy.py`
+#:   里 `SHARED_S3_ARGS` 上面的注释。
+SHARED_S3_ARGS = ("--s3-upload-cutoff", "8Mi",
+                  "--s3-chunk-size", "5Mi",
+                  "--s3-upload-concurrency", "4")
+
+
 RCLONE_VARS = (
     "RCLONE_CONFIG_YOJIGEN_TYPE",
     "RCLONE_CONFIG_YOJIGEN_PROVIDER",
@@ -216,11 +225,12 @@ def publish(zst: Path, flavor: str, arch: str, go: bool = False) -> str:
         #       ③ 这一组分段上传参数
         #     两处都是"往同一个仓库推文件"，本来就该共用一套参数。
         #     每次都是撞上才知道——**它们的形状是"那边能跑"，所以没人会去比。**
+        # ★ 而 `SHARED_S3_ARGS` 那三个必须和 `packages/skirt/skirtlib/deploy.py`
+        #   里那份【逐字一样】。两个仓库没法互相 import，所以靠一条测试守着
+        #   （`tests/test_repo.py`，它会真的去加载那个文件）。
         cmd = (rclone_cmd + ["copy", src, dest + "/",
                              "--s3-no-check-bucket", "--stats-one-line",
-                             "--s3-upload-cutoff", "8Mi",
-                             "--s3-chunk-size", "5Mi",
-                             "--s3-upload-concurrency", "4"])
+                             *SHARED_S3_ARGS])
         rc, _ = run_streaming(cmd, env=env)
         if rc != 0:
             die(f"上传失败（退出码 {rc}）")
