@@ -102,5 +102,6 @@ apk 的信任模型是**平权**的：`/etc/apk/keys/` 里所有 `.rsa.pub` 都�
 ## 相关
 
 - 生成和检查：`packages/scripts/keys.sh`（`gen` / `show` / `check`）
-- 用它签名：`packages/scripts/pack.sh --sign-key` 和 `repo.sh --sign-key`
+- 用它签名：`packages/scripts/pack.sh --sign-key` 和
+  `packages/skirt/skirt repo --sign-key`（后者原来是个脚本 `scripts/repo.sh`）
 - 用它验签：`pantsu rootfs` / `pantsu assemble` / `pantsu img`（自动读这个目录）

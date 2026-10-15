@@ -228,7 +228,8 @@ def run(name: str, arch_requested: str | None = None, img: str | None = None,
         #           Could not open '…': Permission denied
         #
         #   实测撞上了。**这是同一类问题的第二次**——第一次是 build 那边还原
-        #   payload 之后 skirt 删不掉自己的产物（见 scripts/restore-payloads.sh）。
+        #   payload 之后 skirt 删不掉自己的产物（`skirt/skirtlib/restore.py`
+        #   里那段"属主还给宿主"；它原来是脚本 `scripts/restore-payloads.sh`）。
         #
         #   规律：**任何"在容器里以 root 写、拿到容器外用"的东西都要还属主。**
         #   报告这种错误时要注意：qemu 那句话被截断成 "Pe…"，光看日志前 150 个
