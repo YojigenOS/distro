@@ -23,7 +23,8 @@
     IMG=$(curl -s https://repo.os.yojigen.cn/img/minimal/x86_64/latest.txt)
     reinstall.sh dd --img https://repo.os.yojigen.cn/img/minimal/x86_64/$IMG
 
-## 推送用 rclone，环境变量和 packages/scripts/deploy.sh 是同一套
+## 推送用 rclone，环境变量和 packages 的 `skirt deploy`（`skirt/skirtlib/deploy.py`）
+## 是同一套
 
     S3_AK · S3_SK · S3_BASE_URL · S3_BUCKET
 
@@ -43,7 +44,7 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
-from .common import ROOT, die, log, run_streaming
+from .common import die, log, run_streaming
 
 #: 对外可访问的基址。apk 客户端和 reinstall 都用它拼 URL。
 PUBLIC_BASE = os.environ.get("PANSU_PUBLIC_BASE", "https://repo.os.yojigen.cn")
@@ -59,8 +60,9 @@ def public_url(flavor: str, arch: str, name: str) -> str:
 
 # 要传进 rclone 容器的变量名单。
 #
-# ★ 和 packages/scripts/deploy.sh 里那份【是同一套】。两处必须一起改——
+# ★ 和 packages/skirt/skirtlib/deploy.py 里那份【是同一套】。两处必须一起改——
 #   一边加了变量另一边没加，症状是"某个字段静默地没生效"，比直接报错难查。
+#   （`pantsu/tests/test_repo.py` 里有一条测试真去比这两份名单。）
 RCLONE_VARS = (
     "RCLONE_CONFIG_YOJIGEN_TYPE",
     "RCLONE_CONFIG_YOJIGEN_PROVIDER",
@@ -104,8 +106,8 @@ def _creds() -> tuple[str, dict[str, str]]:
     #   ——一句和真正原因（变量没传进去）看不出关系的话。
     #
     #   `-e VAR`（不带 =值）的语义是"把这个变量从客户端的环境里取出来传进去"，
-    #   正是这里要的。packages/scripts/deploy.sh 里那段是同一个写法，
-    #   而它是对的——**我照抄了思路，漏了这一步。**
+    #   正是这里要的。`skirt deploy`（packages/skirt/skirtlib/deploy.py）里那段
+    #   是同一个写法，而它是对的——**我照抄了思路，漏了这一步。**
     cmd = "docker run --rm -i"
     for name in sorted(RCLONE_VARS):
         cmd += f" -e {name}"
@@ -180,7 +182,7 @@ def publish(zst: Path, flavor: str, arch: str, go: bool = False) -> str:
         #
         #   ★ 这和上面逐个 -e 传变量是同一件事的两半：**起容器时，凡是要被
         #     容器用到的东西——环境变量、路径——都得显式交给它。**
-        #     `deploy.sh` 那边挂的是固定的 $PWD/var/repo，所以那半它天然没
+        #     那边（`skirt deploy`）挂的是固定的 var/repo，所以那半它天然没
         #     这个问题；rclone 用宿主的 /tmp 就得动态挂。
         src = str(stage)
         rclone_cmd = rclone.split()
@@ -197,7 +199,8 @@ def publish(zst: Path, flavor: str, arch: str, go: bool = False) -> str:
             rclone_cmd[i:i] = ["-v", f"{stage}:/staging"]
             src = "/staging"
 
-        # ★ S3 的分段上传参数——**和 packages/scripts/deploy.sh 里那一组是同一套**。
+        # ★ S3 的分段上传参数——**和 packages/skirt/skirtlib/deploy.py 里那一组
+        #   （`PACKAGES_ARGS`）是同一套**。
         #
         #   少了它们，大于 ~50 MB 的文件会被对象存储/前面的 nginx 直接拒掉：
         #
@@ -207,7 +210,7 @@ def publish(zst: Path, flavor: str, arch: str, go: bool = False) -> str:
         #
         #   413 是 Payload Too Large，长得完全不像"上传方式不对"。
         #
-        #   ★ 这是【第三次】在 repo.py 里补 deploy.sh 已经有的东西了：
+        #   ★ 这是【第三次】在 repo.py 里补 `skirt deploy` 已经有的东西了：
         #       ① 逐个 -e 传环境变量
         #       ② 把源目录挂进容器
         #       ③ 这一组分段上传参数

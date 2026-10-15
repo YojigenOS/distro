@@ -91,7 +91,7 @@ def main() -> None:
     g.add_argument("--publish", action="store_true",
                    help="建完顺带准备发布（默认干跑，只列要传什么）")
     g.add_argument("--go", action="store_true",
-                   help="配合 --publish：真的传（和 packages 的 deploy.sh 同一个约定）")
+                   help="配合 --publish：真的传（和 packages 的 `skirt deploy --go` 同一个约定）")
 
     pb = sub.add_parser("publish", help="把已建好的镜像放进仓库（默认干跑）")
     pb.add_argument("name")
