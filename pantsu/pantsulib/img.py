@@ -53,8 +53,12 @@ reinstall 的 dd 模式把这张镜像原样写进硬盘，一个字节都不改
 ## 引导器从哪来（这一版是借的）
 
 `grub-mkstandalone` / `grub-install` 跑在借来的 Alpine 容器里。**这是暂时的**：
-等 packages 那边的 `grub` 配方建出来，就把 `--directory` 指向我们自己包里的模块，
-交付物里不再带别人的二进制。接口留好了，改的是一行。
+把 `--directory` 指向我们自己包里的模块，交付物里就不再带别人的二进制。
+接口留好了，改的是一行。
+
+★ 而 2026-10-15 核了一遍：**配方早就建出来了**（`packages/recipes/tool/grub`），
+而这一句里"等 grub 配方建出来"的前提已经不成立——**没做的是接线那一步**。
+所以这不是"等上游"，是一条开着的活。
 """
 
 from __future__ import annotations

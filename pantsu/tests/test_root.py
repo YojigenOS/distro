@@ -426,7 +426,3 @@ class Test没测到的(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-if __name__ == "__main__":
-    unittest.main()

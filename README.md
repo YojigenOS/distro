@@ -60,12 +60,14 @@ distro    →  读 manifest + 读仓库 URL  →  下载 → 装进一个根  �
 ```
 ✓ variants/           三个风味：base / devel / minimal（0007 说的"两格都占"）
 ✓ pantsu/             本仓库自己的驱动。skirt 建包，pantsu 建系统
-✓ apk 软件仓库         https://repo.os.yojigen.cn（aarch64 线上 15 个包）
+✓ apk 软件仓库         https://repo.os.yojigen.cn（aarch64 91 个 · x86_64 93 个）
 ✓ 组装（容器）         pantsu assemble —— 装根 + 打 tar + docker import 成镜像
 ✓ 建盘（磁盘）         pantsu img —— 混合 GPT + 引导器 + grub.cfg，出 .img.zst
 ✓ 跑起来              pantsu vm —— 启镜像 / 内核直启；--serial-file + --timeout 可当断言
-✓ docs/决策记录/       8 篇属于本仓库的（编号不重编，跳号表示在 packages）
-✗ manifest/            还不存在：这个系统用了哪些包的哪些版本
+✓ docs/决策记录/       10 篇属于本仓库的（编号不重编，跳号表示在 packages）
+✓ 组成清单             /etc/yojigen-os-manifest —— 装根时从 apk 自己的库里
+                      导出【名字-版本】，跟着根进 tar、进镜像
+✗ manifest/            还没有【独立的】那一份（上面那个是镜像里的）
 ✗ 交付形式/            还不存在：容器 / rootfs / ISO 各自的定义
 ✗ docs/约定/系统约定.md  还不存在
 ```
@@ -82,12 +84,24 @@ pantsu 只认那一个 URL——不 checkout 配方、不读 `var/output/`、不
 
 下一步的顺序：
 
+★ 原来这三条（2026-10-15 逐条核过）**全都做完了**：
+
 ```
-① packages 侧：把已建好的包【打包 + 发布】，架构 x86_64
-   util-linux · yojigenos-init · linux 躺在 var/output/ 里，线上仓库还没有它们
-   ⚠ release.yml 没有 src/ccache 缓存、上限 60 分钟——编内核会撞墙（实测被 cancelled）
-② packages 侧：grub · openssh 两份新配方（grub 的 i386-pc 要 x86_64 的 gcc 开 multilib）
-③ 上 TX：x86_64 建盘 → 本地 QEMU(SeaBIOS) 验 → reinstall dd
+① 打包 + 发布 x86_64      ✅ 做了。util-linux · yojigen-os-init · linux 都在线上。
+                             而现在线上的规模是 aarch64 91 个 · x86_64 93 个。
+                             （那条 "release.yml 上限 60 分钟编内核会撞墙" 也过去了 ——
+                               那一轮 55 分 43 秒建完了。）
+② grub · openssh 两份配方  ✅ 做了。两份都在 packages/recipes/ 里，而且都进了 minimal。
+③ 上 TX                    ✅ 做了。那台机器上跑着一个真系统：61 个包、内核 7.2.9。
+```
+
+**而"下一步"要重排** —— 这一节留在这里等重排，不写没核过的东西。
+眼下明确的开口有三个（都核过）：
+
+```
+· grub 还是从 Alpine 借的 —— 配方建出来了，**没做的是"把 --directory 换过去"那一步**
+· x86_64 线上的内核是 7.2.9-r1，而配方已经到 r3
+· `docs/约定/系统约定.md` 还不存在（上面那格 ✗）
 ```
 
 **验收的原则没变**：装出来的东西要能和另一条路算出来的对上。
