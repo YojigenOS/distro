@@ -10,7 +10,9 @@
   · 交付物必须不可变（0005）：文件名里带日期，latest.txt 只写一行文件名
   · 干跑要真的只是干跑（没凭据 / 没加 --go 就不许传）
   · 推文件那一组参数（S3 分段上传、逐变量 -e）——它们在 packages 的
-    deploy.sh 里已经踩过一遍，这里验的是"同一个仓库用同一套参数"
+    `skirt deploy`（`packages/skirt/skirtlib/deploy.py`；2026-10-15 之前那个
+    文件叫 `packages/scripts/deploy.sh`）里已经踩过一遍，这里验的是
+    "同一个仓库用同一套参数"
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 import hashlib
+import importlib
 import io
 import os
 import sys
@@ -26,12 +29,36 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent          # distro/pantsu
 sys.path.insert(0, str(ROOT))
 
 from support import 安静, 会报错的混入  # noqa: E402
 
 from pantsulib import repo  # noqa: E402
+
+#: packages 那边推同一个仓库的那份实现。★ 它在【另一个仓库】里：本地开发时
+#: 是 workspace 布局下的 `../../packages/skirt/skirtlib/deploy.py`，而 CI 只
+#: checkout 这一个仓库 —— 那里没有它（见下面那条测试为什么 skip）。
+PACKAGES_DEPLOY = ROOT.parent.parent / "packages" / "skirt" / "skirtlib" / "deploy.py"
+
+
+def _加载_skirt_的_deploy():
+    """把 packages 的 `skirtlib.deploy` 当模块加载进来。
+
+    ★ 用 import 而不是"读源码抽字符串"：要的是【它真拼出来什么】，而不是
+      "那个文件里出现过哪些名字"。
+    ★ `packages/skirt`（skirtlib 的父目录）只是临时挂到 sys.path 上，加载完
+      就摘掉——不让它之外的顶层名字渗进这个进程。
+    """
+    package_root = str(PACKAGES_DEPLOY.parent.parent)
+    要摘 = package_root not in sys.path
+    if 要摘:
+        sys.path.insert(0, package_root)
+    try:
+        return importlib.import_module("skirtlib.deploy")
+    finally:
+        if 要摘:
+            sys.path.remove(package_root)
 
 
 @contextlib.contextmanager
@@ -109,7 +136,7 @@ class Test凭据(会报错的混入, unittest.TestCase):
 
         少了逐个 -e，容器里的 rclone 什么配置都没有，报的是
         "didn't find section in config file"——一句和真因看不出关系的话。
-        实测撞过（照抄了 deploy.sh 的思路，漏了这一步）。
+        实测撞过（照抄了 `skirt deploy` 的思路，漏了这一步）。
         """
         with 干净的环境(**self.凭据), mock.patch.object(repo.shutil, "which",
                                                 lambda _: None):
@@ -128,11 +155,33 @@ class Test凭据(会报错的混入, unittest.TestCase):
             _, env = repo._creds()
         self.assertFalse([k for k in env if k.startswith("RCLONE_CONFIG_YOJIGEN_")])
 
-    def test_变量名单是给同一个仓库用的(self):
-        """这一份和 packages/scripts/deploy.sh 里那份是同一套，两处必须一起改。"""
-        for name in repo.RCLONE_VARS:
-            self.assertTrue(name.startswith("RCLONE_CONFIG_YOJIGEN_"), name)
-        self.assertIn("RCLONE_CONFIG_YOJIGEN_SECRET_ACCESS_KEY", repo.RCLONE_VARS)
+    def test_变量名单和_skirt_deploy_是同一套(self):
+        """两个仓库往【同一个仓库】推文件，所以 rclone 那组变量必须一样。
+
+        ★ 这一条真的去比：把 `packages/skirt/skirtlib/deploy.py` 加载进来，
+        问它 `rclone_env()` 拼出哪些变量，再和这边的 `repo.RCLONE_VARS` 对齐。
+        一边加了变量、另一边没加，症状是"某个字段静默地没生效"，比直接报错难查
+        ——所以它值得一条会红的测试。
+
+        ★ 原来这条只查了"名字都以 `RCLONE_CONFIG_YOJIGEN_` 开头"和
+        "`SECRET_ACCESS_KEY` 在里面"——那两句是【假装查了】：另一边怎么变、
+        这边少多少个，它都不会红。而它当时指的那个文件（`packages/scripts/
+        deploy.sh`）2026-10-15 就搬成了 `packages/skirt/skirtlib/deploy.py`。
+
+        ★ 那个文件在另一个仓库里，CI 只 checkout distro —— 读不到就 skip，
+        并且说清是【因为不存在】，不是"比过了，一样"。
+        """
+        if not PACKAGES_DEPLOY.is_file():
+            self.skipTest(f"读不到 {PACKAGES_DEPLOY}（CI 只 checkout distro 这一个仓库）"
+                          "——跨仓库那半比对没法做")
+        deploy = _加载_skirt_的_deploy()
+        那边的名单 = set(deploy.rclone_env(
+            {"S3_AK": "ak", "S3_SK": "sk", "S3_BASE_URL": "https://s3.example"}))
+        self.assertTrue(那边的名单,
+                        "deploy.rclone_env() 什么都没拼出来——它要的那三个 S3_* 变量名"
+                        "是不是变了？(RCLONE_VARS=" + repr(getattr(deploy, "RCLONE_VARS", None)) + ")")
+        self.assertEqual(set(repo.RCLONE_VARS), 那边的名单,
+                         "两边的 rclone 变量名单不一样 —— 同一个仓库，两处必须一起改")
 
 
 class Test发布(会报错的混入, unittest.TestCase):
