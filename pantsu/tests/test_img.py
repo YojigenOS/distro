@@ -213,3 +213,68 @@ class Test没测到的(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Test容器脚本里的元字符(unittest.TestCase):
+    """★ 这条守的是一个【刚刚踩过的坑】（2026-10-15 晚，建盘当场失败）。
+
+    `CONTAINER_SCRIPT` 里有几个【不带引号的 heredoc】（`cat > … <<EOF`）——
+    而**不带引号的 heredoc 会把里面的注释也展开**：
+
+        sh: pantsu: not found                      ← 注释里写了 `pantsu vm`，反引号当命令替换
+        sh: config_directory: parameter not set    ← 注释里写了 ${config_directory}
+
+    而那份脚本是 `set -eu` 的，所以第二句直接把整个建盘杀掉。
+
+    ★ 规律：**heredoc 外面的注释是注释，里面的注释是代码。**
+      要在那里面写美元号、反引号、反斜杠，都得先转义。
+
+    ★ 而为什么值得一条测试：这个坑【本地的单元测试全绿、CI 前面几步也全绿】
+      —— 它只在那一步真的跑起来时才炸。而那时它已经花了十几分钟。
+    """
+
+    def _heredoc_段(self, 脚本文本: str):
+        """把每个 `cat > … <<EOF … EOF` 之间的内容切出来。"""
+        import re
+        段s = []
+        for m in re.finditer(r'<<(?:\'|")?EOF(?:\'|")?\n(.*?)\nEOF', 脚本文本, re.S):
+            段s.append(m.group(1))
+        return 段s
+
+    def test_heredoc_里的注释不许有裸的元字符(self):
+        import re
+        from pantsulib import img
+        段s = self._heredoc_段(img.CONTAINER_SCRIPT)
+        self.assertTrue(段s, "一个 heredoc 都没找到 —— 这条测试的判据过时了")
+
+        # ★ 只扫【注释行】—— 那才是这条测试要说的事。
+        #
+        #   代码行里的 `$ROOT_UUID` / `$KERNEL_NAME` / `$CONSOLE` 是【要展开】的
+        #   （少了它们 grub.cfg 里会留下字面的变量名，机器起不来）。
+        #   而我第一版把整段都扫了，于是它把这三位也报了出来 —— 测试太严，
+        #   和太松一样没用：它会逼着下一个人把该展开的东西转义掉。
+        坏 = []
+        for n, 段 in enumerate(段s, 1):
+            for i, line in enumerate(段.split("\n"), 1):
+                if not line.lstrip().startswith("#"):
+                    continue
+                去转义 = re.sub(r"\\[\$`\\]", "", line)
+                if "$" in 去转义:
+                    坏.append(f"第 {n} 段第 {i} 行有裸的美元号: {line.strip()[:70]}")
+                if "`" in 去转义:
+                    坏.append(f"第 {n} 段第 {i} 行有裸的反引号: {line.strip()[:70]}")
+        self.assertFalse(坏, "heredoc 里（包括注释）有会被 shell 展开的写法：\n  "
+                             + "\n  ".join(坏))
+
+    def test_而该展开的还在(self):
+        """反过来那一头：`$ROOT_UUID` / `$KERNEL_NAME` / `$CONSOLE` 必须能展开。
+
+        少了这句话，上面那条测试可以用"把 heredoc 改成带引号"来作弊 ——
+        而那样 grub.cfg 里会留下字面的 `$ROOT_UUID`，机器起不来。
+        """
+        from pantsulib import img
+        段s = self._heredoc_段(img.CONTAINER_SCRIPT)
+        合 = "\n".join(段s)
+        for 变量 in ("$ROOT_UUID", "$KERNEL_NAME", "$CONSOLE"):
+            self.assertIn(变量, 合, f"{变量} 不见了 —— 它是要在 heredoc 里展开的")
+            self.assertNotIn("\\" + 变量, 合, f"{变量} 被转义了 —— 那它就展开不了")

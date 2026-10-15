@@ -191,13 +191,27 @@ terminal_output console serial
 #   因为**它从来没读过那个文件**。于是重启之后又回到原来的系统，
 #   而日志里看不出任何异常。
 #
-#   ★ 而这条只有【真装一次】才会走到：`pantsu vm` 默认走的是 --mode direct
+#   ★ 而这条只有【真装一次】才会走到：pantsu vm 默认走的是 --mode direct
 #     （内核 + initramfs 直启），那条路根本不经过 GRUB ✓。所以 CI 全绿，
 #     而盘上的引导链是断的。
 #
-#   ${config_directory} 是 GRUB 给"主配置所在目录"设的变量；而
+#   ★★ 而这十几行注释本身踩过一次坑（2026-10-15 晚，建盘当场失败）。
+#     这个 heredoc 是【不带引号】的，所以它里面的【注释】也会被展开 ——
+#     而展开发生在【这里】，不是 GRUB 那边。当时报的是：
+#
+#         sh: pantsu: not found
+#         sh: config_directory: parameter not set
+#
+#     第一句来自注释里的「pantsu vm」被反引号括着（在本脚本里那是命令替换）；
+#     第二句来自注释里写了一个带花括号的变量名。而这个脚本是 set -eu 的，
+#     所以第二句直接把建盘杀掉。
+#
+#     **规律：heredoc 外面的注释是注释，里面的注释是【代码】。**
+#     要在这十几行里写美元号、反引号、反斜杠，都得先转义。
+#
+#   config_directory 是 GRUB 给"主配置所在目录"设的那个变量；而
 #   grub-mkstandalone 那条路（我们用的就是它）可能没设它，所以补一个
-#   $prefix 的退路。这两行合起来是各发行版 /etc/grub.d/40_custom 里的标准写法。
+#   prefix 的退路。这两行合起来是各发行版 /etc/grub.d/40_custom 里的标准写法。
 if [ -f \\${config_directory}/custom.cfg ]; then
     source \\${config_directory}/custom.cfg
 elif [ -z "\\${config_directory}" -a -f \\$prefix/custom.cfg ]; then
