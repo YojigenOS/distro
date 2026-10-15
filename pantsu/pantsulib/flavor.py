@@ -61,7 +61,11 @@ def load(name: str) -> dict:
         die(f"{path}: [variant] name 是 {v['name']!r}，和文件名 {name!r} 对不上")
 
     if not isinstance(v["packages"], list) or not v["packages"]:
-        die(f"{path}: packages 不能为空")
+        # ★ 说清是【哪一种】不对：packages = "glibc" 是合法的 toml，而字符串
+        #   是可迭代的——' '.join("glibc") 会变成 "g l i b c"，一串单字母的
+        #   包名。原来这里一律报"不能为空"，而它明明不空，人会往错的方向查。
+        die(f"{path}: packages 必须是一个非空的列表"
+            f"（现在拿到的是 {type(v['packages']).__name__}）")
 
     kind = v.get("kind", "container")
     if kind not in KINDS:
@@ -83,10 +87,14 @@ def require_producible(v: dict) -> None:
     """
     kind = v["_kind"]
     if kind not in PRODUCIBLE:
+        # ★ 名单从数据里算，不写死。写死过一次：原来那句是"iso / disk / kernel
+        #   都还没有实现"，而 disk 2026-10-12 就能建出来了（img.py）——
+        #   报错里那句话正好是人卡住的时候最信的一句。
+        还没实现 = " / ".join(k for k in KINDS if k not in PRODUCIBLE)
         die(
             f"风味 {v['name']} 的 kind 是 {kind!r}，还没有实现。\n"
             f"       现在能产出交付物的只有：{' '.join(PRODUCIBLE)}\n"
-            f"       0007 里的 iso / disk / kernel 都还没有实现"
+            f"       0007 里的 {还没实现} 都还没有实现"
         )
 
 

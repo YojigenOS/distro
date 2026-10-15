@@ -99,14 +99,26 @@ pantsu 只认那一个 URL——不 checkout 配方、不读 `var/output/`、不
 ```
 variants/              风味：哪些包、什么形态
 pantsu/                本仓库的驱动（skirt 的兄弟：那边建包，这边建系统）
-scripts/               薄壳：组装、验证、跑 VM
+scripts/               薄壳：跑 VM（macOS 双击用的那个 .command）
 keys/                  会烤进交付物的签名公钥
+tests/                 仓库级的检查（调用点、shell 脚本的写法）
 docs/
 ├── 约定/              系统约定（待写）
 ├── 指南/              怎么把系统跑起来（待写）
 ├── 决策记录/           8 篇，编号是全项目的（见那里的 README）
 └── 待办.md             （待写）
 ```
+
+## 测试
+
+```bash
+python3 -m unittest discover -s pantsu/tests   # pantsu 自己（风味的校验、命令行的拼法、预检）
+python3 -m unittest discover -s tests          # 仓库级的检查（调用点和 shell 脚本）
+```
+
+和 `packages/skirt/tests/` 一样的分工：**不需要 docker、不联网、不动产物**的那些
+逻辑放在单元测试里；真跑一次才算数的（装根、建盘、起 QEMU、发布）留给 CI 的
+workflow，测试里只留下 `skip` 和一句"为什么"。
 
 ## 相关
 

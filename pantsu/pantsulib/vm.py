@@ -106,7 +106,13 @@ def _find_firmware(explicit: str | None, arch: str) -> str | None:
 
 # ── 直接启动：把根打成 initramfs ──────────────────────────────────────────
 
-def _make_initramfs(root_dir: Path, out: Path) -> Path:
+def _make_initramfs(root_dir: Path, out: Path, arch: str) -> Path:
+    """把装好的根打成 initramfs。
+
+    ★ `arch` 是【必须的】：它要决定容器用哪个架构跑（下面 --platform）。
+      少了它会 NameError——而这条分支平时被"复用现成的"挡掉，所以一直没现形
+      （2026-10-15 写测试时才抓到：`--direct` 那条路只要真去打一次就炸）。
+    """
     if out.is_file() and not os.environ.get("PANSU_VM_FORCE"):
         log("initramfs", f"复用 {out.relative_to(ROOT)}（想重打就删了它）")
         return out
@@ -280,7 +286,7 @@ def run(name: str, arch_requested: str | None = None, img: str | None = None,
                 f"{kernel.relative_to(ROOT)} 不存在（直启要有内核）。\n"
                 f"       或者用磁盘镜像：先 pantsu img {name}"
             )
-        initrd = _make_initramfs(root_dir, work / f"initramfs-{arch}.cpio.gz")
+        initrd = _make_initramfs(root_dir, work / f"initramfs-{arch}.cpio.gz", arch)
         cmd = _qemu_cmd(arch, kernel, initrd, None, mem, use_accel, firmware_path, serial_out)
 
     print("  " + " ".join(shlex.quote(c) for c in cmd))

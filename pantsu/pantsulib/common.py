@@ -118,8 +118,12 @@ def run_streaming(cmd: list[str], stdin_text: str | None = None,
 
     chunks: list[str] = []
     assert proc.stdout is not None
-    for line in proc.stdout:
-        chunks.append(line)
-        print(indent + line, end="", flush=True)
+    # ★ 用 with 关掉它。不关的话每跑一条命令漏一个文件描述符——pantsu 自己
+    #   跑一轮就退了看不出来，但它在【别人的进程里】被当库用时是会攒起来的
+    #   （测试里表现为 ResourceWarning）。
+    with proc.stdout:
+        for line in proc.stdout:
+            chunks.append(line)
+            print(indent + line, end="", flush=True)
     proc.wait()
     return proc.returncode, "".join(chunks)
