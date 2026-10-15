@@ -144,7 +144,7 @@ packages = [
   # ---- 库 ----
   "zlib",
   "libpng",
-  # initramfs 用（run-vm.sh 打 cpio 归档）。base 不需要它——
+  # initramfs 用（pantsu vm --mode direct 会打 cpio 归档）。base 不需要它——
   # 它是【做可启动产物】的工具，不是运行时依赖。
   "cpio",
 ]

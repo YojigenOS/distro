@@ -12,6 +12,9 @@
 它校验得最全（文件名和 name 必须一致、packages 不能为空、kind 要在白名单里），
 但没有任何地方 import 它；而真正在用的两处（assemble.sh 和 run-vm.sh）各自
 内联了一段没有校验的读 toml 代码。同一个东西三个出处，只有死的那个是对的。
+
+（2026-10-15：那两个脚本也收进来了——assemble → pantsulib/image.py，
+run-vm → pantsulib/vm.py。这条"同一个东西几个出处"的账到这里才平。）
 """
 
 from __future__ import annotations

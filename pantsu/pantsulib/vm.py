@@ -16,8 +16,8 @@ x86_64 用 QEMU 默认的 **SeaBIOS**，和 TX 那台完全同构（BIOS + virti
 
 ## 为什么 initramfs 在一个容器里打
 
-原来那套（scripts/run-vm.sh）要向 packages 要 cpio 的产物，那等于读
-`var/output/`——这个仓库的规矩是不许。Alpine 容器里 `apk add cpio` 就有，
+原来那套（scripts/run-vm.sh，2026-10-15 删掉、收进了这个文件）要向 packages
+要 cpio 的产物，那等于读 `var/output/`——这个仓库的规矩是不许。Alpine 容器里 `apk add cpio` 就有，
 和建盘那边一样：**借工具，不借包。**
 
 ## 两个曾经咬过人的地方（都在下面留着防线）

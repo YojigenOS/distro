@@ -4,9 +4,12 @@
 # macOS 会把 .command 文件在 Terminal 里打开并执行——所以这个文件双击可用，
 # 也是给「我想亲眼看看自己的系统」准备的最短路径。
 #
-# 为什么是 --no-prepare：rootfs 和 initramfs 已经留在 output/<arch>/.vm/ 里了，
-# 从零准备要两分钟，而这里只想尽快看到内核起来。
-# 换了包之后要重做一次准备，去掉那个开关跑 scripts/run-vm.sh 就行。
+# 为什么直接就起：rootfs 和 initramfs 已经留在 var/<风味>/ 里了，有现成的
+# 就复用——从零准备要两分钟，而这里只想尽快看到内核起来。
+# 换了包之后要重做一次：删掉 var/<风味>/rootfs-<架构>/ 和 initramfs-<架构>.cpio.gz。
+#
+# （原来这里调的是 scripts/run-vm.sh，2026-10-15 那个壳收进 pantsu 了。
+#   下面这行就是它当时做的事，一个参数都没少：风味 base、内存 1G、内核直启。）
 
 cd "$(dirname "$0")/.."
 
@@ -38,4 +41,8 @@ cat <<'BANNER'
 BANNER
 
 sleep 2
-exec ./scripts/run-vm.sh --no-prepare
+
+if [ -n "${ARCH:-}" ]; then
+    exec ./pantsu/pantsu vm "${FLAVOR:-base}" --mem "${MEM:-1G}" --mode direct --arch "${ARCH}"
+fi
+exec ./pantsu/pantsu vm "${FLAVOR:-base}" --mem "${MEM:-1G}" --mode direct

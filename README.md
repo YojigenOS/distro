@@ -72,7 +72,8 @@ distro    →  读 manifest + 读仓库 URL  →  下载 → 装进一个根  �
 
 **而最根本的那条已经补上了**：apk 软件仓库存在了，这个仓库因此有了合法的输入。
 pantsu 只认那一个 URL——不 checkout 配方、不读 `var/output/`、不 import `skirtlib`。
-（`scripts/run-vm.sh` 现在只是 `pantsu vm` 的一个壳，最后一处 skirt 调用也没了。）
+（最后一处 skirt 调用在 2026-10-12 就没了；2026-10-15 `scripts/run-vm.sh` 这个
+空壳也删了——它要做的 `pantsu vm` 全都会。）
 
 ★ **磁盘那一格只验了一半**：aarch64 + UEFI 那条路在 QEMU 里真启动过
 （edk2 → ESP 里的 GRUB → 我们的内核 → ext4 根 → `/init` → 串口问候）。
