@@ -111,20 +111,26 @@ class Test镜像里那段脚本(unittest.TestCase):
 
 class Test标签名单(unittest.TestCase):
 
-    def test_七个标签就是_0003_说的那组(self):
+    def test_九个标签就是_0003_说的那组(self):
         """★ 验的是【存在且非空】，不是具体值——时间戳和 commit 每次都不同。
 
         名单短一个，"计划了但没写进去"的标签就永远没人发现；而它和"写了但写错"
         对外面的人来说一样糟。见决策记录 0003「二」。
+
+        ★ 这条测试原来叫「七个标签」并写死了那七个 —— 而当时 image.py 写的是九个、
+        `docs/记录-第一个能用的交付物.md` 说的也是九个。**所以那条测试在守一个错的
+        数**：它让"少了两个"看起来是被保证的。2026-10-15 改成九。
         """
         self.assertEqual(set(verify.LABELS), {
             "org.opencontainers.image.title",
             "org.opencontainers.image.version",
             "org.opencontainers.image.created",
             "org.opencontainers.image.source",
+            "org.opencontainers.image.url",
             "org.opencontainers.image.revision",
             "cn.yojigen.os.flavor",
             "cn.yojigen.os.arch",
+            "cn.yojigen.os.built",
         })
 
     def test_用的是我们真拥有的域名(self):
@@ -133,7 +139,8 @@ class Test标签名单(unittest.TestCase):
         原来是 `org.yojigenos.…`——那声明的是 yojigenos.org，不是我们的。
         """
         self.assertEqual([k for k in verify.LABELS if k.startswith("cn.yojigen.")],
-                         ["cn.yojigen.os.flavor", "cn.yojigen.os.arch"])
+                         ["cn.yojigen.os.flavor", "cn.yojigen.os.arch",
+                          "cn.yojigen.os.built"])
 
 
 class Test问_docker(会报错的混入, unittest.TestCase):

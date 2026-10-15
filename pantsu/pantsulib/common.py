@@ -36,6 +36,28 @@ DEFAULT_REPO = "https://repo.os.yojigen.cn"
 #: 由 docker 的 --add-host 负责解析。
 LOCAL_REPO = "http://host.docker.internal:18080"
 
+#: ★ 交付镜像上【该有】的全部标签。**这是唯一出处** —— `image.py` 按它写、
+#:   `verify.py` 按它查。所以这两件事不可能再分叉。
+#:
+#:   为什么值得这么安排：2026-10-15 那天发现 image 写九个、verify 只查七个
+#:   （少了 `image.url` 和 `cn.yojigen.os.built`）。而 verify 自己的注释里
+#:   写着「一个"计划了但没写进去"的标签，和"写了但写错"的标签一样糟：外面的人
+#:   看不到区别」—— 那句话正是为这件事说的，而它当时没做到。
+#:
+#:   OCI 那六个是【工具真的会读】的（docker inspect、镜像扫描器、供应链工具）；
+#:   后三个是我们自己的。见决策记录 0003「二、补上 OCI 标准组」。
+LABELS = (
+    "org.opencontainers.image.title",
+    "org.opencontainers.image.version",
+    "org.opencontainers.image.created",
+    "org.opencontainers.image.source",
+    "org.opencontainers.image.url",
+    "org.opencontainers.image.revision",
+    "cn.yojigen.os.flavor",
+    "cn.yojigen.os.arch",
+    "cn.yojigen.os.built",
+)
+
 #: tar 里所有成员统一的时间戳（2026-01-01T00:00:00Z）。
 #:
 #: 见 packages 的决策记录 0005。这里目前是个常量，而不是"参与组装的包里最晚

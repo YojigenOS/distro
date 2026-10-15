@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT))
 
 from support import 会报错的混入  # noqa: E402
 
-from pantsulib import image  # noqa: E402
+from pantsulib import common, image, verify  # noqa: E402
 
 
 class Test标签和命令(unittest.TestCase):
@@ -205,3 +205,46 @@ class Test组装(会报错的混入, unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class Test标签的写和查不许分叉(unittest.TestCase):
+    """★ 这是这次真正的修法。
+
+    2026-10-15 之前：`image.py` 写九个标签、`verify.py` 查七个，**两张清单各写一份**。
+    漏掉的那两个（`image.url`、`cn.yojigen.os.built`）可以悄悄消失而没人知道 ——
+    而 `verify.py` 自己的注释里当时就写着「一个"计划了但没写进去"的标签，和"写了但
+    写错"的标签一样糟：外面的人看不到区别」。
+
+    现在清单只有一份（`common.LABELS`），所以分叉在结构上不可能。这两条测试守的就是
+    那个结构：**两边拿到的是同一个对象**，以及**生成出来的 LABEL 恰好覆盖它**。
+    """
+
+    def test_写和查用的是同一张清单(self):
+        self.assertIs(image.LABELS, verify.LABELS)
+        self.assertIs(image.LABELS, common.LABELS)
+
+    def test_生成出来的_LABEL_恰好覆盖那张清单(self):
+        """不多不少。
+
+        少了 = 有标签没人验（原来就是这样：写九个、查七个）；
+        多了 = 有标签不在清单里 —— 那它是什么、该不该在，就没人知道了。
+        """
+        args = image.import_args(name="base", arch="aarch64", tag="edge",
+                                 built="2026-01-01T00:00:00Z", revision="a" * 40)
+        写了 = sorted(a[len("LABEL "):].split("=", 1)[0]
+                     for a in args if a.startswith("LABEL "))
+        self.assertEqual(写了, sorted(common.LABELS))
+
+    def test_值里不能有空字符串(self):
+        """清单里每一个都真的填了值。
+
+        `LABEL k=` 那种在 docker 里是合法的空值，而 verify 只查「非空」，
+        所以它会当成缺了。这种错要在【写】的那一头拦住。
+        """
+        args = image.import_args(name="base", arch="aarch64", tag="edge",
+                                 built="2026-01-01T00:00:00Z", revision="a" * 40)
+        for a in args:
+            if not a.startswith("LABEL "):
+                continue
+            with self.subTest(label=a):
+                k, _, v = a[len("LABEL "):].partition("=")
+                self.assertTrue(v.strip(), f"标签 {k} 的值是空的")

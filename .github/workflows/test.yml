@@ -1,0 +1,39 @@
+# 跑测试。push 和 PR 都跑。
+#
+# ── 为什么加它（2026-10-15）─────────────────────────────────────────────
+#
+# `pantsu` 原来【一条测试都没有】。2026-10-15 补了 168 条，而当时这个仓库的
+# 两个 workflow 全是 `workflow_dispatch` —— push 之后什么都不跑，所以那些测试
+# 也一样没人跑。
+#
+# 而那和这个项目最上面那条规矩对着干：**能算出来的，不要靠人记得**。
+# 在这里它就是"别靠人记得跑测试"。
+#
+# ★ 补测试的那一趟本身就抓到四个真 bug（其中一个 `pantsu vm --mode direct`
+#   必炸的 NameError）。而这四条里没有一条是 CI 会发现的 —— 它们全靠人跑。
+#   加了这个 workflow 之后，至少"以后不会再犯回去"是有东西守着的。
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 跑 pantsu 的测试
+        run: python3 -m unittest discover -s pantsu/tests -v 2>&1 | tail -40
+
+      - name: 跑仓库级的测试
+        run: python3 -m unittest discover -s tests -v 2>&1 | tail -20
+
+      # ★ 上面那两个 `tail` 会把 unittest 的退出码吃掉 —— 和 packages 那边
+      #   repo.sh 里记着的「管道把 mkndx 的退出码吃掉」是同一个坑。
+      #   所以这里【再判一次】，不要管道，让退出码自己说话。
+      - name: 再跑一遍，这次要退出码
+        run: |
+          python3 -m unittest discover -s pantsu/tests
+          python3 -m unittest discover -s tests

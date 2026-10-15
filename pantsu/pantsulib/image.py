@@ -35,6 +35,7 @@ import time
 from pathlib import Path
 
 from . import flavor, root
+from .common import LABELS
 from .common import DEFAULT_REPO, ROOT, die, log, resolve_arch, run
 
 #: 标准的环境变量。`docker import` 不像 Dockerfile 那样有默认值，而少了
@@ -84,24 +85,28 @@ def import_args(name: str, arch: str, tag: str, built: str, revision: str) -> li
     # ★ 值里有空格就必须带引号：`docker import -c "LABEL …"` 会【按空格切】。
     #   不加报的是 `Syntax error - can't find = in "OS"`——只提到 OS，
     #   看不出是 title 那一行出的问题。
-    labels = [
-        # ① OCI 官方的标准组。工具【真的会读】它们（docker inspect、镜像扫描器、
-        #    供应链工具）：写了别人就知道这个镜像是从哪个 commit、什么时候建的。
-        f'LABEL org.opencontainers.image.title="Yojigen OS {name}"',
-        f"LABEL org.opencontainers.image.version={tag}",
-        f"LABEL org.opencontainers.image.created={built}",
-        "LABEL org.opencontainers.image.source=https://github.com/YojigenOS/distro",
-        "LABEL org.opencontainers.image.url=https://os.yojigen.cn",
-        # ② 我们自己的。
-        f"LABEL cn.yojigen.os.flavor={name}",
-        f"LABEL cn.yojigen.os.arch={arch}",
-        f"LABEL cn.yojigen.os.built={built}",
-    ]
-    if revision:
-        labels.append(f"LABEL org.opencontainers.image.revision={revision}")
-
-    for label in labels:
-        args += ["-c", label]
+    #: ★ 值这么填。而【有哪些标签】是 LABELS 那份清单说了算 —— 它和 verify 共用，
+    #:   所以"写了但没验"在结构上不可能发生（那正是它之前发生过的事：
+    #:   image 写九个、verify 查七个，而漏掉的那两个可以悄悄消失而没人知道）。
+    values = {
+        "org.opencontainers.image.title": f'"Yojigen OS {name}"',
+        "org.opencontainers.image.version": tag,
+        "org.opencontainers.image.created": built,
+        "org.opencontainers.image.source": "https://github.com/YojigenOS/distro",
+        "org.opencontainers.image.url": "https://os.yojigen.cn",
+        "cn.yojigen.os.flavor": name,
+        "cn.yojigen.os.arch": arch,
+        "cn.yojigen.os.built": built,
+        "org.opencontainers.image.revision": revision,
+    }
+    for key in LABELS:
+        v = values.get(key)
+        if not v:
+            # revision 在拿不到 commit 时是空的（见上）。其余的空了就是 bug。
+            if key == "org.opencontainers.image.revision":
+                continue
+            die(f"标签 {key} 没有值 —— LABELS 里加了它而 values 里没填")
+        args += ["-c", f"LABEL {key}={v}"]
     return args
 
 

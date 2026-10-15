@@ -41,7 +41,8 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from .common import die, run_streaming
+from .common import LABELS, die, run_streaming
+
 
 #: 镜像里跑的那段检查。**POSIX sh**，通过 stdin 喂给镜像。
 #:
@@ -117,21 +118,14 @@ fi
 exit "$FAIL"
 """
 
-#: ★ OCI 标准组 + 我们自己那两个。这组是【工具真的会读】的（docker inspect、
-#:   镜像扫描器、供应链工具），所以它值得被验证——一个"计划了但没写进去"的标签，
-#:   和"写了但写错"的标签一样糟：外面的人看不到区别。
+#: ★ 这张清单【不在这里】——它在 `image.py` 里，而这里 import 它。
+#:
+#:   原来这里抄了一份，于是 image 写九个、这里查七个，漏掉的那两个可以悄悄消失
+#:   而没人知道。而这个文件自己的注释里当时就写着「一个"计划了但没写进去"的标签，
+#:   和"写了但写错"的标签一样糟：外面的人看不到区别」—— 意思是说，它当时没做到。
 #:
 #:   验的是【存在且非空】，不是具体值——值每次都不一样（时间、commit）。
 #:   见决策记录 0003「二、补上 OCI 标准组」。
-LABELS = (
-    "org.opencontainers.image.title",
-    "org.opencontainers.image.version",
-    "org.opencontainers.image.created",
-    "org.opencontainers.image.source",
-    "org.opencontainers.image.revision",
-    "cn.yojigen.os.flavor",
-    "cn.yojigen.os.arch",
-)
 
 
 def _inspect(image: str, template: str) -> str:
