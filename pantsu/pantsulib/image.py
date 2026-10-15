@@ -32,7 +32,6 @@ from __future__ import annotations
 import shutil
 import subprocess
 import time
-from pathlib import Path
 
 from . import flavor, root
 from .common import LABELS
@@ -51,16 +50,19 @@ DEFAULT_ENV = (
     'CMD ["/bin/sh"]',
 )
 
-#: 我们自己的标签。标准组没有的地方（风味、架构）才用它。
-#:
-#: ★ 命名空间用【反写域名】，所以根必须是【我们真的拥有的域名】。
-#:
-#:   原来是 `org.yojigenos.…`——那声明的是 yojigenos.org，而那个域名不是我们的。
-#:   真的是 yojigen.cn，所以根是 `cn.yojigen` ✓。
-#:
-#:   这一层比"连字符"重要：`org.yojigenos` 和 `org.yojigen-os` 都合法、都能用，
-#:   但两个都指向一个不存在的域名。**合法不等于对。**
-OWN_LABELS = ("cn.yojigen.os.flavor", "cn.yojigen.os.arch", "cn.yojigen.os.built")
+# ★ 我们自己的三个标签（`cn.yojigen.*`）【没有】单独一份清单 —— 清单只有
+#   `common.LABELS` 一份。这里曾经有一份 `OWN_LABELS`，而它唯一的读者是测试：
+#   生产代码从来不问它。第三份抄写没有好处，只会分叉（这一族已经分叉过一次，
+#   见 common.LABELS 那段）。
+#
+# ★ 命名空间用【反写域名】，所以根必须是【我们真的拥有的域名】。
+#
+#   原来是 `org.yojigenos.…`——那声明的是 yojigenos.org，而那个域名不是我们的。
+#   真的是 yojigen.cn，所以根是 `cn.yojigen` ✓。
+#
+#   这一层比"连字符"重要：`org.yojigenos` 和 `org.yojigen-os` 都合法、都能用，
+#   但两个都指向一个不存在的域名。**合法不等于对。**
+#   （名字这一层由 `pantsu/tests/test_verify.py` 的"用的是我们真拥有的域名"守着。）
 
 
 def _revision() -> str:

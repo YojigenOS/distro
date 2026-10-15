@@ -20,7 +20,6 @@ run-vm → pantsulib/vm.py。这条"同一个东西几个出处"的账到这里�
 from __future__ import annotations
 
 import tomllib
-from pathlib import Path
 
 from .common import VARIANTS_DIR, die, log
 

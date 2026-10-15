@@ -59,19 +59,27 @@ class Test标签和命令(unittest.TestCase):
                       指令)
         self.assertIn("ENV LANG=C.UTF-8", 指令)
 
-    def test_九个标签齐的时候有九个(self):
-        """标准组六个（含 revision）+ 我们三个。"""
+    def test_清单里的标签一个不少(self):
+        """个数从 `common.LABELS` 读——这里不写死。
+
+        （原来写死 9，并且还问了一遍 `image.OWN_LABELS` 那份影子清单：清单里
+        加一个标签，这条测试照样是绿的。见 `common.LABELS` 那段。）
+        """
         标签 = [a for a in self._参数() if a.startswith("LABEL ")]
-        self.assertEqual(len(标签), 9)
-        for k in image.OWN_LABELS:
+        self.assertEqual(len(标签), len(common.LABELS))
+        for k in common.LABELS:
             with self.subTest(label=k):
                 self.assertTrue(any(t.startswith(f"LABEL {k}=") for t in 标签))
 
     def test_拿不到_commit_就不写那个标签(self):
         """★ 这不是"少一个"：一个说"我不知道"的标签比一个写着 "unknown" 的
-        标签有用——后者看起来像"这个 commit 叫 unknown"。"""
+        标签有用——后者看起来像"这个 commit 叫 unknown"。
+
+        ★ 少的那一个是 `revision` —— 清单里唯一允许缺的。个数从清单推出来，
+        不写死（原来写死的 8 是"九个减一个"，清单一变它就静静地对不上了）。
+        """
         标签 = [a for a in self._参数(revision="") if a.startswith("LABEL ")]
-        self.assertEqual(len(标签), 8)
+        self.assertEqual(len(标签), len(common.LABELS) - 1)
         self.assertFalse([t for t in 标签 if "revision" in t])
 
     def test_title_的值要带引号(self):
