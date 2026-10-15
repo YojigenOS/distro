@@ -18,6 +18,7 @@ docker 全换成假的：这几条验的是判据，不是 docker 到底会不�
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import io
 import re
 import sys
@@ -25,24 +26,37 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent          # distro/pantsu
 sys.path.insert(0, str(ROOT))
 
 from support import 安静, 会报错的混入  # noqa: E402
 
 from pantsulib import verify  # noqa: E402
 
-#: 这个项目真的写出来过的 bash 专有写法（和仓库根的 tests/test_sh_scripts.py
-#: 是同一类检查）。★ 这里要单独写一份的原因：那段 payload 现在住在
-#: `verify.py` 的字符串里，**没有文件名**——按 shebang 扫描的那些检查看不见它。
-BASHISMS = [
-    (re.compile(r"^\s*\[\["), "[[ ]]"),
-    (re.compile(r"\bfunction\s+\w+\s*\("), "function"),
-    (re.compile(r"\bsource\s+\S"), "source（POSIX 是 .）"),
-    (re.compile(r"\becho\s+-e\b"), "echo -e"),
-    (re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*:\s*[0-9]"), "${VAR:0:12}"),
-    (re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*=\("), "数组赋值"),
-]
+
+def _仓库根的_bashisms() -> list:
+    """那份 bashism 名单住在【仓库根的 tests/test_sh_scripts.py】——唯一出处。
+
+    ★ 为什么这里要跨目录去取，而不是再抄一份：那段 payload 现在住在
+      `verify.py` 的字符串里，**没有文件名**，按 shebang 扫描的那些检查看不见
+      它 —— 所以要在这里单独扫一遍。而"单独扫一遍"和"单独列一份名单"是两件
+      事：抄一份的结果是这边少了四条（`${VAR/a/b}` · `(( ))` · `${a[@]}` ·
+      `$'…'`），而 **IN_IMAGE_SCRIPT 要拿去只有 dash 的镜像里跑**，少的这四条
+      恰好是那里最危险的。
+
+    ★ 那个文件不是包（`tests/` 下没有 `__init__.py`），所以按【路径】加载，
+      不往 sys.path 里塞第二个 `tests` —— 那个名字太通用，容易被别的东西占。
+    """
+    path = ROOT.parent / "tests" / "test_sh_scripts.py"
+    spec = importlib.util.spec_from_file_location("_root_test_sh_scripts", path)
+    assert spec and spec.loader, f"加载不了 {path}"
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.BASHISMS
+
+
+#: (正则, 名字, 为什么) —— 形状跟着仓库根那份走，这里【不】改它。
+BASHISMS = _仓库根的_bashisms()
 
 
 def 假_inspect(标签: dict | None = None, cmd: str = '["/bin/sh"]', 存在: bool = True):
@@ -61,7 +75,13 @@ def 假_inspect(标签: dict | None = None, cmd: str = '["/bin/sh"]', 存在: bo
     return 问
 
 
-def 七个标签(**覆盖) -> dict:
+def 全部标签(**覆盖) -> dict:
+    """清单里【每一个】标签都给一个非空值。
+
+    ★ 个数不写死在这里：它跟着 `verify.LABELS` 走（那是唯一出处）。
+      原来这位 helper 叫「七个标签」，而那份清单早就是九个了 —— 名字和它
+      返回的东西对不上，本身就让人少查两个。见下面 Test标签名单。
+    """
     d = {k: "有值" for k in verify.LABELS}
     d.update(覆盖)
     return d
@@ -71,13 +91,14 @@ class Test镜像里那段脚本(unittest.TestCase):
     """那段 payload 要被喂进【别的镜像】跑——里面可能只有 dash。"""
 
     def test_是_POSIX_sh_没有_bash_扩展(self):
+        """名单来自仓库根的 `tests/test_sh_scripts.py`（见上面那个 helper）。"""
         found = []
         for i, line in enumerate(verify.IN_IMAGE_SCRIPT.splitlines(), 1):
             if line.lstrip().startswith("#"):
                 continue
-            for pat, name in BASHISMS:
+            for pat, name, why in BASHISMS:
                 if pat.search(line):
-                    found.append(f"{i}: {name} —— {line.strip()}")
+                    found.append(f"{i}: {name}（{why}）—— {line.strip()}")
         self.assertEqual(found, [],
                          "镜像里那段脚本用了 bash 专有写法（被验证的镜像里可能只有 dash）：\n  "
                          + "\n  ".join(found))
@@ -120,6 +141,12 @@ class Test标签名单(unittest.TestCase):
         ★ 这条测试原来叫「七个标签」并写死了那七个 —— 而当时 image.py 写的是九个、
         `docs/记录-第一个能用的交付物.md` 说的也是九个。**所以那条测试在守一个错的
         数**：它让"少了两个"看起来是被保证的。2026-10-15 改成九。
+
+        ★ 这九个名字是【故意抄在这里的】，别改成从 `verify.LABELS` 读数：
+        这就是那一族测试里唯一一处"把合同打出来"的地方，从 `verify.LABELS`
+        读出来再和它自己比就成了同义反复 —— 加一个、删一个都不会红。
+        （反过来，问"个数对不对"的那两条在 `test_image.py` 里，那两条从
+        `common.LABELS` 读数才是对的。）
         """
         self.assertEqual(set(verify.LABELS), {
             "org.opencontainers.image.title",
@@ -195,14 +222,14 @@ class Test验证流程(会报错的混入, unittest.TestCase):
         return out.getvalue()
 
     def test_好镜像放行(self):
-        text = self._跑(标签=七个标签())
+        text = self._跑(标签=全部标签())
         self.assertIn("验证通过", text)
         self.assertNotIn("[退出码", text)
 
     def test_没有这个镜像就直说(self):
         """★ 比 shell 版多做的一件事。
 
-        原来镜像不存在也能"跑完"：CMD 空、七个标签全缺、最后起不来——四行
+        原来镜像不存在也能"跑完"：CMD 空、九个标签全缺、最后起不来——四行
         报错都在说同一件事，而没一行说【真原因】。
         """
         text = self._跑(存在=False)
@@ -211,14 +238,14 @@ class Test验证流程(会报错的混入, unittest.TestCase):
 
     def test_没有默认_CMD_要拦下(self):
         """docker import 不像 Dockerfile 那样有默认 CMD——实测撞过。"""
-        text = self._跑(标签=七个标签(), cmd="[]")
+        text = self._跑(标签=全部标签(), cmd="[]")
         self.assertIn("没有默认 CMD", text)
         self.assertIn("no command specified", text)
         self.assertIn("[退出码 1]", text)
 
     def test_风味标签对不上要说传错镜像了(self):
         """--flavor 的全部意义：它挡住的是"验了另一个镜像"这种错。"""
-        text = self._跑(标签=七个标签(**{"cn.yojigen.os.flavor": "minimal"}),
+        text = self._跑(标签=全部标签(**{"cn.yojigen.os.flavor": "minimal"}),
                      flavor="base")
         self.assertIn("传错镜像", text)
         self.assertIn("[退出码 1]", text)
@@ -230,7 +257,7 @@ class Test验证流程(会报错的混入, unittest.TestCase):
 
     def test_起不来就别往后跑(self):
         """后面那些检查要进镜像里跑——起不来就没有"后面"。"""
-        text = self._跑(标签=七个标签(), 起得来=False, 镜像里不该被调用=True)
+        text = self._跑(标签=全部标签(), 起得来=False, 镜像里不该被调用=True)
         self.assertIn("镜像起不来", text)
         self.assertIn("没有意义", text)
         self.assertIn("[退出码 1]", text)
@@ -238,7 +265,7 @@ class Test验证流程(会报错的混入, unittest.TestCase):
     def test_镜像里没过也要退出_1(self):
         """★ 两个数字都要报出来：元数据的问题和镜像里的问题是两处，
         合在一起看才知道该先修哪个。"""
-        text = self._跑(标签=七个标签(), 镜像里=(2, ""))
+        text = self._跑(标签=全部标签(), 镜像里=(2, ""))
         self.assertIn("镜像内部退出码 2", text)
         self.assertIn("镜像元数据 0 项", text)
         self.assertIn("[退出码 1]", text)
@@ -255,7 +282,7 @@ class Test验证流程(会报错的混入, unittest.TestCase):
             记录.update(kw)
             return (0, "")
 
-        with mock.patch.object(verify, "_inspect", 假_inspect(七个标签())), \
+        with mock.patch.object(verify, "_inspect", 假_inspect(全部标签())), \
              mock.patch.object(verify.subprocess, "run",
                             lambda *a, **k: type("结果", (), {"returncode": 0})()), \
              mock.patch.object(verify, "run_streaming", 假的_run_streaming), \
