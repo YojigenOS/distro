@@ -85,10 +85,13 @@ jobs:
       #
       # 三步，中间那步不是我们实现的：读风味 → apk add --root → tar → docker import。
       # apk 自己做依赖解析、冲突检测、下载、校验、解包、记账。
+      #
+      # ★ docker import 的镜像架构由【这台 runner 的 docker daemon】决定，
+      #   所以下面 --arch 必须和 runner 是同一个架构（见上面 runs-on 那段）。
       - name: 组装
         run: |
           set -euo pipefail
-          ./scripts/assemble.sh "${{ inputs.flavor }}" \
+          ./pantsu/pantsu assemble "${{ inputs.flavor }}" \
               --repo https://repo.os.yojigen.cn \
               --arch "${{ inputs.arch }}" \
               --tag  "${{ inputs.tag }}"

@@ -2,10 +2,10 @@
 
 这里放的是**会烤进交付物的公钥**。apk 在装包时用它们验证签名。
 
-组装时 `scripts/assemble.sh` 会把这里的每一个 `*.rsa.pub` 复制到
-交付物的 `/etc/apk/keys/` 里——**在装第一个包之前**，因为装第一个包时就要
-验签，而验签要公钥。这也是「信任从哪里开始」的答案：公钥来自交付物自己的
-构建输入（这个目录，在 git 里），不经过网络，不依赖 HTTPS 锚定。
+组装时 `pantsu rootfs`（`pantsu assemble` 的第一步就是它）会把这里的每一个
+`*.rsa.pub` 复制到交付物的 `/etc/apk/keys/` 里——**在装第一个包之前**，因为
+装第一个包时就要验签，而验签要公钥。这也是「信任从哪里开始」的答案：公钥来自
+交付物自己的构建输入（这个目录，在 git 里），不经过网络，不依赖 HTTPS 锚定。
 
 ## 命名
 
@@ -103,4 +103,4 @@ apk 的信任模型是**平权**的：`/etc/apk/keys/` 里所有 `.rsa.pub` 都�
 
 - 生成和检查：`packages/scripts/keys.sh`（`gen` / `show` / `check`）
 - 用它签名：`packages/scripts/pack.sh --sign-key` 和 `repo.sh --sign-key`
-- 用它验签：`scripts/assemble.sh`（自动读这个目录）
+- 用它验签：`pantsu rootfs` / `pantsu assemble` / `pantsu img`（自动读这个目录）

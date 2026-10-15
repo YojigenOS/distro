@@ -15,6 +15,8 @@ skirt 建包；pantsu 建系统。
     pantsu/pantsu img <名> --publish --go       真的传到 repo.os.yojigen.cn
     pantsu/pantsu publish <名>                  把已建好的镜像放进仓库（干跑）
     pantsu/pantsu publish <名> --go             同上，真传（CI 里就是这么用的）
+    pantsu/pantsu assemble <名>                 装根 → 打 tar → 导入成容器镜像
+                                                （CI 里就是这么用的）
     pantsu/pantsu verify <镜像>                 验一个容器镜像：元数据 + 在镜像里跑一遍
     pantsu/pantsu verify <镜像> --flavor base   顺带核对风味标签（对不对得上）
     pantsu/pantsu vm <名>                       在 QEMU 里跑起来（默认启磁盘镜像）
@@ -41,6 +43,7 @@ skirt 建包；pantsu 建系统。
     img.py      把根变成磁盘镜像（0013 那条路：混合 GPT + 引导器）
     repo.py     把镜像放进仓库（repo.os.yojigen.cn，rclone）
     vm.py       在 QEMU 里跑起来（启镜像 / 内核直启）
+    image.py    容器交付物（装根 → 打 tar → docker import + 标签）
     verify.py   验交付物（镜像里跑一遍；那段 payload 和 rootfs --probe 共用）
 """
 
@@ -54,7 +57,7 @@ from pathlib import Path
 # 允许直接以脚本方式运行（./pantsu/pantsu），无需安装
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from pantsulib import flavor, img, repo, root, verify, vm
+from pantsulib import flavor, image, img, repo, root, verify, vm
 from pantsulib.common import DEFAULT_REPO, LOCAL_REPO, VAR_DIR, resolve_arch
 
 
@@ -96,6 +99,14 @@ def main() -> None:
     pb.add_argument("--img", help="指定镜像文件（默认 var/<风味>/<风味>-<架构>.img.zst）")
     pb.add_argument("--go", action="store_true", help="真的传（不加就只列要传什么）")
 
+    im = sub.add_parser("assemble", help="装根 → 打 tar → 导入成容器镜像")
+    im.add_argument("name")
+    im.add_argument("--arch", help="默认宿主架构")
+    im.add_argument("--repo", default=DEFAULT_REPO,
+                    help=f"apk 仓库 URL（默认 {DEFAULT_REPO}；本地调试用 {LOCAL_REPO}）")
+    im.add_argument("--tag", default="edge", help="镜像 tag（默认 edge）")
+    im.add_argument("--image", help="镜像名（默认 yojigenos/<风味>）")
+
     v = sub.add_parser("verify", help="验一个容器镜像（元数据 + 在镜像里跑一遍）")
     v.add_argument("image", help="镜像名，例如 yojigenos/base:edge")
     v.add_argument("--flavor", help="顺便核对风味标签：对不上说明传错镜像了")
@@ -128,6 +139,8 @@ def main() -> None:
                         out=a.out, size=a.size, kernel=a.kernel)
         if a.publish:
             repo.publish(zst, a.name, resolve_arch(a.arch), go=a.go)
+    elif a.cmd == "assemble":
+        image.assemble(a.name, a.arch, a.repo, tag=a.tag, image_name=a.image)
     elif a.cmd == "verify":
         verify.verify(a.image, a.flavor)
     elif a.cmd == "publish":

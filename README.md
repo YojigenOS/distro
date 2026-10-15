@@ -61,7 +61,7 @@ distro    →  读 manifest + 读仓库 URL  →  下载 → 装进一个根  �
 ✓ variants/           三个风味：base / devel / minimal（0007 说的"两格都占"）
 ✓ pantsu/             本仓库自己的驱动。skirt 建包，pantsu 建系统
 ✓ apk 软件仓库         https://repo.os.yojigen.cn（aarch64 线上 15 个包）
-✓ 组装（容器）         scripts/assemble.sh —— 只做 docker import，装根交给 pantsu
+✓ 组装（容器）         pantsu assemble —— 装根 + 打 tar + docker import 成镜像
 ✓ 建盘（磁盘）         pantsu img —— 混合 GPT + 引导器 + grub.cfg，出 .img.zst
 ✓ 跑起来              pantsu vm —— 启镜像 / 内核直启；--serial-file + --timeout 可当断言
 ✓ docs/决策记录/       8 篇属于本仓库的（编号不重编，跳号表示在 packages）
@@ -91,7 +91,7 @@ pantsu 只认那一个 URL——不 checkout 配方、不读 `var/output/`、不
 ```
 
 **验收的原则没变**：装出来的东西要能和另一条路算出来的对上。
-2026-10-12 用了两次——pantsu 接管装根之后，产出的 tar 和旧 `assemble.sh` 的
+2026-10-12 用了两次——pantsu 接管装根之后，产出的 tar 和当时的 `assemble.sh` 的
 **逐项一致**（1444 项，模式/属主/大小全同），只少了 PAX 头里那几个不确定的
 时间戳记录；建盘那边则是**在 QEMU 里真启动**，不是看文件对不对。
 
