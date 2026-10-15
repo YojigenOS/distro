@@ -44,7 +44,7 @@ on:
         description: '风味（variants/*.toml 里的名字）'
         required: true
         type: choice
-        options: [minimal, base, base-devel]
+        options: [minimal, base, devel]
         default: minimal
       arch:
         description: '架构'

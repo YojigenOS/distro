@@ -58,7 +58,7 @@ distro    →  读 manifest + 读仓库 URL  →  下载 → 装进一个根  �
 **容器和磁盘两格都通了。磁盘那一格在 QEMU 里真启动验证过。**
 
 ```
-✓ variants/           三个风味：base / base-devel / minimal（0007 说的"两格都占"）
+✓ variants/           三个风味：base / devel / minimal（0007 说的"两格都占"）
 ✓ pantsu/             本仓库自己的驱动。skirt 建包，pantsu 建系统
 ✓ apk 软件仓库         https://repo.os.yojigen.cn（aarch64 线上 15 个包）
 ✓ 组装（容器）         scripts/assemble.sh —— 只做 docker import，装根交给 pantsu

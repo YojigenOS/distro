@@ -1,18 +1,22 @@
-# base-devel —— 构建环境
+# devel —— 构建环境
 #
 # 决策记录 0011 定了它的含义：
 #
-#     配方能用什么  ⟺  base-devel 里有什么
-#     自举完成      ⟺  用 base-devel 能构建出 base-devel 本身
+#     配方能用什么  ⟺  devel 里有什么
+#     自举完成      ⟺  用 devel 能构建出 devel 本身
 #
 # 所以这个列表不是「常用的东西」，而是**一个能重建自己的系统**该有的东西。
 # 少一个包，自举就会在某一步报「command not found」——而那正是我们想要的
 # 发现方式：让失败告诉我们缺什么，而不是靠猜。
 #
 # 实测宿主和它的差别只有两样：`patch` 和 `setpriv`（util-linux）。两个都补上了。
+#
+# ★ 2026-10-15：这个风味原名 `base-devel`，改成 `devel` 了。见 0019。
+#   两个名字都看不出"它到底是什么"——而 `devel` 短一点，也不假装自己是从 base 拼的
+#   （它和 base 是并列的两套包列表，不是叠加）。
 
 [variant]
-name        = "base-devel"
+name        = "devel"
 kind        = "container"
 description = "构建环境：base + 工具链 + 构建工具（自举的目标）"
 
@@ -27,7 +31,7 @@ packages = [
   #   实现。这正是 Debian 的配置。
   #
   #   不加这一条的话：filesystem 已经不再提供 /bin/sh 了，重建出来的
-  #   base-devel 镜像会【没有 /bin/sh】——而 configure 脚本全都要它。
+  #   devel 镜像会【没有 /bin/sh】——而 configure 脚本全都要它。
   "dash-binsh",
   "bash",
   "coreutils",
@@ -132,7 +136,7 @@ packages = [
   # 它要 zstd（4.x 起强制），自己用 cmake 构建——三个包，一条短链。
   #
   # 驱动显式把 /usr/lib/ccache 放进 PATH（见 build.py），不靠镜像的 ENV：
-  # base-devel 是通过 docker import 变成镜像的，那不会带 ENV。
+  # devel 是通过 docker import 变成镜像的，那不会带 ENV。
   "ccache",
   "cmake",
   "zstd",

@@ -203,7 +203,7 @@ jobs:
           #   `docker pull yojigenos/base:edge` 拿到哪个架构取决于最后一次
           #   推的是谁。而 aarch64 和 x86_64 是两次独立的运行。
           #
-          #   base-devel:edge-aarch64 / edge-x86_64 本来就是这么命名的
+          #   devel:edge-aarch64 / edge-x86_64 本来就是这么命名的
           #   （手工推的时候），所以这是沿用已有的约定，不是新发明。
           for t in "$TAG-$ARCH" "$DATE-$ARCH"; do
             docker tag "$BASE:$TAG" "$BASE:$t"
