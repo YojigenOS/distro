@@ -249,15 +249,32 @@ terminal_output console serial
 #   ★ 而当天晚上的印证：在 TX 的手写版 grub.cfg 里补上这几行之后，
 #     它【当场】就进了 reinstall 的临时环境（Alpine 内核 6.18.52-0-lts）。
 #     ——而在此之前，同一个 custom.cfg 被完全无视了两次。
-set grubenv="\\$prefix/grubenv"
+# ★★ 先做一次 search，把根设备定到【我们自己的根分区】。这几行 2026-10-16 加的，
+#   补的是一个**在 UEFI 下才露出来的洞**（BIOS 下看不出来）。
+#
+#   原因：我们那个 EFI 文件是用 grub-mkstandalone 做的，配置被【嵌进文件里】。
+#   于是「配置所在目录」和 prefix 这两个 GRUB 变量都指向内嵌的那个内存盘，
+#   而 custom.cfg 在【真正的盘】上 —— 两条分支因此【全部落空】。
+#
+#   ★ 实测（同一张镜像，只换固件）：
+#       BIOS（SeaBIOS）→ 塞进根分区的 custom.cfg 【被读到】✓
+#       UEFI（OVMF）    → 同一份文件 【没被读到】✗
+#     而两次的串口里系统都正常起来了 —— 差别只在那一行记号有没有出现。
+#
+#   ★ 所以这里先 search 一次（和下面 menuentry 里那条是同一个 UUID），
+#     把根设备指到根分区，再去盘上按路径找。内嵌那个分支留着：
+#     将来要是改成"从盘上加载配置"，那条路就是对的。
+search --fs-uuid --set=root $ROOT_UUID
+
+set grubenv="/boot/grub/grubenv"
 if [ -s \\$grubenv ]; then
     load_env --file \\$grubenv
 fi
 
 if [ -f \\${config_directory}/custom.cfg ]; then
     source \\${config_directory}/custom.cfg
-elif [ -z "\\${config_directory}" -a -f \\$prefix/custom.cfg ]; then
-    source \\$prefix/custom.cfg
+elif [ -f /boot/grub/custom.cfg ]; then
+    source /boot/grub/custom.cfg
 fi
 
 menuentry "Yojigen OS" {
