@@ -330,8 +330,18 @@ class Test交付物里没有别人的二进制(unittest.TestCase):
              "mkdir -p /e; "
              "mount -o loop,offset=$((1*1048576)),sizelimit=$((512*1048576)) "
              f"-t vfat /w/{v.name} /e; "
+             # ★ 判据是 `alpine-linux-musl`，不是裸的 `alpine`。
+             #
+             #   2026-10-16 实测：拿裸 `alpine` 去数，那张【已经换成我们自己的
+             #   grub】的盘上会命中 1 次 —— 而命中的是 grub.cfg 里的一句注释
+             #   （注释会被 grub-mkstandalone 嵌进 EFI ✗）。**判据太宽，抓的是
+             #   字符串而不是"别人的东西"。**
+             #
+             #   而 `alpine-linux-musl` 是编译器路径（实测借来的那份里写着
+             #   `-isystem /usr/lib/gcc/x86_64-alpine-linux-musl/…`），
+             #   它是"这个二进制是别人的工具链建的"的【铁证】。
              "for f in $(find /e -name '*.EFI' -o -name '*.efi'); do "
-             "  echo \"--- $f\"; strings \"$f\" | grep -ci alpine || true; "
+             "  echo \"--- $f\"; strings \"$f\" | grep -ci alpine-linux-musl || true; "
              "done; umount /e"],
             capture_output=True, text=True)
         self.assertEqual(r2.returncode, 0,
@@ -346,12 +356,13 @@ class Test交付物里没有别人的二进制(unittest.TestCase):
             if line.startswith("--- "):
                 当前 = line[4:].strip()
             elif line.strip().isdigit() and int(line.strip()) > 0:
-                坏.append(f"{当前}: 出现 {line.strip()} 次 alpine")
+                坏.append(f"{当前}: 出现 {line.strip()} 次 alpine-linux-musl")
         self.assertFalse(
             坏,
-            "交付物的 EFI 里带着【别人的发行版】的名字 —— 那个引导器是借来的：\n  "
+            "交付物的 EFI 里带着【别人的工具链】的痕迹 —— 那个引导器是别人建的：\n  "
             + "\n  ".join(坏)
-            + "\n  （这条 2026-10-16 立的；当时实测 BOOTX64.EFI 里明文写着 Alpine。）")
+            + "\n  （这条 2026-10-16 立的；当时实测 BOOTX64.EFI 里写着 "
+            "x86_64-alpine-linux-musl 的编译器路径。）")
 
     def test_建盘不再借_Alpine_的_grub(self):
         """源码这一侧：建盘脚本里不许再有 `apk add … grub…`。
