@@ -459,7 +459,18 @@ def build(name: str, arch_requested: str | None = None, repo: str = DEFAULT_REPO
         #   CI 里两者一致（ubuntu-26.04 上建 x86_64），所以这行在那里是空操作——
         #   它服务的是【本地预演】：Mac 上先把镜像启一遍，再拿去 DD。
         "--platform", f"linux/{arch}",
-        "-v", f"{root_dir}:/rootfs:ro",
+        # ★ 2026-10-16 从 :ro 改成 rw —— 而理由是【挂载点本身要能建】：
+        #   chroot 那一段要 mkdir /rootfs/mnt/os 和 /rootfs/mnt/esp，
+        #   而 mkdir 是在这个文件系统上【写】。第一次跑就撞在这上面：
+        #
+        #       mkdir: can't create directory '/rootfs/mnt/os': Read-only file system
+        #
+        #   ★ 而那次失败是好失败：它明确说了哪一行，一眼就能定位 ——
+        #     不是"GRUB 什么都没输出"那一类。
+        #
+        #   改成 rw 之后，实际写进去的只有那两个空目录：根里的东西只被【读】，
+        #   而 grub 要写的地方是 tmpfs（/tmp）和另外两个 bind（/os、/esp）。
+        "-v", f"{root_dir}:/rootfs:rw",
         "-v", f"{img.parent}:/out",
         # 建完把属主还回来（见 CONTAINER_SCRIPT 末尾那段注释）。
         # 用宿主自己的 uid/gid，不写死——CI 上是 1001，开发者本机可能是别的。
