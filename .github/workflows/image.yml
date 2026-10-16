@@ -388,8 +388,16 @@ jobs:
         env:
           PANSU_TEST_IMG: var/${{ inputs.flavor }}/${{ inputs.flavor }}-${{ inputs.arch }}.img
         run: |
+          # ★★ `set -o pipefail` 是必须的：这一步的 shell 是 `bash -e {0}`，
+          #   而 `-e` 【不管管道里非最后一条命令的失败】—— 所以
+          #   `python3 … | tail -25` 的退出码是 tail 的，永远是 0。
+          #
+          #   2026-10-16 实测：那条测试在 CI 上【确实挂了】（FAIL，报
+          #   "ESP 上一个 EFI 文件都没有"），而这一步照样报 success，
+          #   连下面的"发布"都照跑。**一条挂了而没人知道的测试，等于没有。**
+          set -o pipefail
           echo "而那张盘: $(ls -la "$PANSU_TEST_IMG" 2>/dev/null | awk '{print $5}') 字节"
-          python3 -m unittest discover -s pantsu/tests -p "test_image.py" -v 2>&1 | tail -25
+          python3 -m unittest discover -s pantsu/tests -p "test_image.py" -v
 
       - name: 发布到仓库
         if: ${{ inputs.deploy }}

@@ -281,7 +281,14 @@ class Test交付物里没有别人的二进制(unittest.TestCase):
         """拿【真产物】说话。没有产物就跳过（CI 里产物是有的）。"""
         import os
         import subprocess
-        v = Path(os.environ["PANSU_TEST_IMG"]) if os.environ.get("PANSU_TEST_IMG") else None
+        # ★ resolve()：docker 的 -v 要【绝对路径】。
+        #
+        #   2026-10-16 在 CI 上撞到：那边给的是相对路径（var/minimal/…），
+        #   于是 v.parent 也是相对的，docker 直接拒绝挂载 → 第一个 docker 调用
+        #   挂了 → stdout 空 → 下面那句 assertTrue(文件们) 报
+        #   "ESP 上一个 EFI 文件都没有"。**而本地一直是过的**，因为我手输的是
+        #   /tmp/v.img（绝对的）。又一个"本地和 CI 不一样"。
+        v = Path(os.environ["PANSU_TEST_IMG"]).resolve() if os.environ.get("PANSU_TEST_IMG") else None
         if v is None or not v.is_file():
             self.skipTest("没有 PANSU_TEST_IMG —— 这条要一张建好的盘")
 
