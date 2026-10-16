@@ -277,16 +277,12 @@ class Test交付物里没有别人的二进制(unittest.TestCase):
     在提交的那一刻就会被拦下，而不是等到下一次建盘。
     """
 
-    def _efi_们(self, vi: Path) -> list:
-        """从一张盘里把 EFI 分区上那几个 .EFI 抠出来（只读，不改盘）。"""
-        return []
-
     def test_EFI_里不许有_alpine(self):
         """拿【真产物】说话。没有产物就跳过（CI 里产物是有的）。"""
         import os
         import subprocess
-        v = os.environ.get("PANSU_TEST_IMG")
-        if not v or not Path(v).is_file():
+        v = Path(os.environ["PANSU_TEST_IMG"]) if os.environ.get("PANSU_TEST_IMG") else None
+        if v is None or not v.is_file():
             self.skipTest("没有 PANSU_TEST_IMG —— 这条要一张建好的盘")
 
         # ESP 在 1 MiB 起、512 MiB 长（和 img.py 里的数字是同一组）。
@@ -299,7 +295,7 @@ class Test交付物里没有别人的二进制(unittest.TestCase):
             '-t vfat /w/IMG /e\n'
             "find /e -name '*.EFI' -o -name '*.efi'\n"
             "umount /e\n"
-        ).replace("/w/IMG", str(v))
+        ).replace("/w/IMG", "/w/" + v.name)
         r = subprocess.run(
             ["docker", "run", "--rm", "--privileged",
              "-v", f"{v.parent}:/w", "alpine:latest", "sh", "-c", 脚本],
@@ -308,20 +304,35 @@ class Test交付物里没有别人的二进制(unittest.TestCase):
         文件们 = [x for x in r.stdout.splitlines() if x.strip()]
         self.assertTrue(文件们, "ESP 上一个 EFI 文件都没有 —— 这条测试的判据过时了")
 
-        for f in 文件们:
-            # 那一行里没有可读的字符串命令，用 strings 在【同一个容器】里做
-            pass
+        # ★★ 这一步第一版写坏了，而它【通过了】——记下来，因为它是这一整晚
+        #   反复遇到的那个形状的又一个：
+        #
+        #   ① 下面这条命令里的盘是硬写的 `/w/IMG`，而那个占位符【从来没被替换】
+        #      （我只在第一个 docker 调用里替换了它）。
+        #   ② 于是 mount 失败 → `set -eu` → 退出码非 0 → stdout 是空的。
+        #   ③ 而解析那段只遍历 stdout —— 空 stdout 就得到【空的坏表】，
+        #      于是 `assertFalse([])` **通过**。
+        #
+        #   **"没有输出"被读成了"没有问题"。** 修法不是把占位符换对就完事：
+        #   下面三句断言才是真正补上的东西 —— 退出码、以及"至少真的扫到了
+        #   一个 EFI 文件"。少了它们，这条命令以后怎么坏都会是绿的。
         r2 = subprocess.run(
             ["docker", "run", "--rm", "--privileged",
              "-v", f"{v.parent}:/w", "alpine:latest", "sh", "-c",
              "set -eu; apk add --no-cache util-linux binutils >/dev/null 2>&1; "
              "mkdir -p /e; "
              "mount -o loop,offset=$((1*1048576)),sizelimit=$((512*1048576)) "
-             "-t vfat /w/IMG /e; "
+             f"-t vfat /w/{v.name} /e; "
              "for f in $(find /e -name '*.EFI' -o -name '*.efi'); do "
              "  echo \"--- $f\"; strings \"$f\" | grep -ci alpine || true; "
              "done; umount /e"],
             capture_output=True, text=True)
+        self.assertEqual(r2.returncode, 0,
+                         "那条数 alpine 的命令自己失败了 —— 而它的 stdout 会是空的，"
+                         "于是下面的检查会【静默通过】：\n" + r2.stderr[-600:])
+        self.assertIn("--- ", r2.stdout,
+                      "一个 EFI 文件都没扫到 —— 那样下面的检查会【静默通过】。"
+                      f"而 stdout 是：{r2.stdout[:300]!r}")
         当前 = None
         坏 = []
         for line in r2.stdout.splitlines():
