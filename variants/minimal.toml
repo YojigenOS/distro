@@ -116,6 +116,123 @@ packages = [
   # 而云主机没有串口。见 recipes/net/dhcpcd/spec.toml 那段。
   "dhcpcd",
 
+  # ── 常用工具：让这个系统【能干活】，不只是【能开机】 ────────────────
+  #
+  # 2026-10-16 加的。起因是在真机上发现：SSH 进去之后 ps 没有、vi 没有、
+  # curl 没有 —— 这台机器能开机、能串口、能 SSH，而【做不了任何事】。
+  #
+  # ── 判据：和 Alpine 的 minirootfs 对标 ─────────────────────────────
+  #
+  # 0007 给这个风味的定位是"取代 Alpine 那个位置"。那就该问：**Alpine 的
+  # minirootfs 里有什么？** 答案是 8 个包（alpine-baselayout · alpine-keys ·
+  # alpine-release · apk-tools · busybox · busybox-binsh ·
+  # ca-certificates-bundle），而其中 busybox 【一个包提供了 304 个 applet】——
+  # ps / top / free / vi / less / wget / ping / ifconfig / route / su / dd /
+  # mount / grep / awk / which / bc / lsof / hostname / tee / cut / sort …
+  #
+  # ★ 而那 304 个【就是"常用"的定义】—— 一个 Alpine 用户 ssh 进去，那些命令
+  #   都在。而代价是【它们是精简版】：busybox 的 ls 没有 --color，vi 是个
+  #   极简的，ps 只认那几个选项。
+  #
+  # ★★ 我们【选了真东西】（coreutils · grep · sed · gawk · findutils …），
+  #    所以【每一个都得显式装】—— 没有"一个包白拿几十个"这回事。
+  #    这份列表就是那个差额的填法：**把 busybox 那些 applet 换成真工具**。
+  #
+  # ★★★ 而它也解释了为什么这一格看起来"短"却不算缺陷：Alpine 的短是
+  #     busybox 替它长的，而我们的长要自己写出来。**这不是 bug，是对标的代价。**
+  #
+  # ── 为什么不加那些大的 ──────────────────────────────────────────
+  #
+  # python3 / perl / gcc / tcpdump / 桌面那一套 —— Alpine 的 minirootfs 里
+  # 同样没有，而它们要 `apk add`。这里跟着它：**要的人自己装**，因为
+  # python3 一个就比上面这一整批还大。这个风味的名字是 minimal。
+
+  # 进程与内存：ps · top · free · uptime · vmstat · kill 的一部分。
+  # ★ 最要紧的一条 —— 没有 ps，机器"活了但看不见里面"。
+  "procps",
+  # 看文件。less 而不装 more：more 是 less 的一个子集，而 busybox 两个名字
+  # 都给了。
+  "less",
+  # 改文件。★ 没有它，ssh 进去【改不了任何一个文件】—— 而那是今晚在真机上
+  # 卡住的第二件事（想看一眼 grub.cfg，没有编辑器）。
+  "vim",
+  # 认文件类型（file xxx 会说"这是 ELF 还是文本"）。
+  "file",
+  # `which` —— 脚本里最常用的那一句。
+  "which",
+  # 算数。shell 的 $(( )) 只支持整数，而 bc 支持小数和进制。
+  "bc",
+
+  # ── 网络 ────────────────────────────────────────────────────────
+  # ★ 下东西。curl 而不是 wget：curl 在依赖链上（apk-tools 那条链要它），
+  #   所以它本来就该在；而 wget 是个【独立包】—— 见下面的待办。
+  #
+  #   ★ 而这条是今晚的实际教训：reinstall.sh 想下东西时用的是 wget，
+  #     而它在我们系统上找不到。curl 能下，但【那个名字】换不了。
+  "curl",
+  # ping。而它带来 iputils 那套（ping · ping6 · tracepath）。
+  "iputils",
+  # ip / ss / route。★ ifconfig 和 route 在 busybox 里，而它们已经是过时的
+  # 接口了 —— 真工具是 ip 那一套。
+  "iproute2",
+
+  # ── 权限 ────────────────────────────────────────────────────────
+  # su。它在这个包里（shadow 提供 su + 那套 useradd/groupadd/passwd）。
+  # ★ 而它同时带来 /etc/shadow 那套工具 —— 首启建用户要用。
+  "shadow",
+  # sudo。★ Alpine 的 minirootfs 【没有】它（它要 apk add）—— 这里加上
+  # 是因为"以 root 登进去"这件事本身就该尽量少做。
+  "sudo",
+
+  # ── 排错 ────────────────────────────────────────────────────────
+  # 谁开着这个文件。
+  "lsof",
+  # 这个程序在干什么（一个命令看系统调用）。
+  "strace",
+
+  # ── 归档 ────────────────────────────────────────────────────────
+  # ★ 上面已经有 tar/gzip/xz，而这两个是"迟早要"的：zstd 现在到处都是
+  #   （我们的镜像自己就是 .zst），bzip2 是 bz2 那批老包。
+  "zstd",
+  "bzip2",
+  # cpio —— initramfs 的格式。★ /init 那套将来要建 initramfs 时用得上，
+  #   而它很小。
+  "cpio",
+
+  # ── 时间与证书 ──────────────────────────────────────────────────
+  # ★ ca-certificates —— 没有它【https 全是失败】，而 curl 要它。
+  #   这是个"看起来不该漏"的漏：原来这一格里没有它。
+  "ca-certificates",
+  # 时区数据库（/usr/share/zoneinfo）。★ 没有它 date 只能说 UTC。
+  "tzdata",
+  # ★ chrony —— 云主机的时钟会漂，而 TLS 和 ssh 都吃时钟。
+  #   它自带 20-chrony 那个启动钩子（同 kbd 的 08-console-keyboard 一类）。
+  "chrony",
+
+  # ── 会话与维护 ──────────────────────────────────────────────────
+  # tmux。★ Alpine 的 minirootfs 没有它 —— 而 ssh 断线时它救过很多人。
+  "tmux",
+  # 拷东西（比 cp 快，能续传，能镜像）。
+  "rsync",
+  # 定时任务 + 日志轮转。两个都很小，而"上了真机"之后迟早要用。
+  "cronie",
+  "logrotate",
+  # 看一眼系统（它是"欢迎来到 Yojigen OS"之外最便宜的那个"这机器是什么"）。
+  "fastfetch",
+
+  # ── 待办：这里【该有】而现在没有配方的 ────────────────────────────
+  #
+  # ★ wget —— 上面选了 curl，而 wget 是【另一个名字】。今晚实测：
+  #   reinstall.sh 下东西时调的是 wget，找不到就跳过那一步。curl 能替代
+  #   功能，替代不了"脚本里写着 wget"这件事。要写配方。
+  # ★ virt-what（+ dmidecode）—— 判断"是不是虚拟机"。今晚 DD 四次尝试里
+  #   三次失败是因为它装不上，于是脚本判断不出 KVM，选了通用的内核模块。
+  #   要写配方。
+  # ★ dmidecode —— virt-what 的依赖，一起。
+  # ★ dosfstools（mkfs.vfat）· parted（分区）· nftables（防火墙）·
+  #   unzip —— 各自场景明确，都还没有配方。
+  # ★ 而 git 该进 devel，不是这里。
+
   # ── 这一格现在空着 ────────────────────────────────────────────────
   # 原来这里列着两件"还没进来，但迟早要"的事。2026-10-15 核过，两件都已经落地：
   #   · apk-tools —— 就在上面（「必须在【被装进盘里的】那一侧」那段），线上也有。
