@@ -78,6 +78,18 @@ packages = [
   # mount / blkid / agetty / sfdisk。前两个是 /init 自己要用的（它已经在
   # 依赖里声明了），后两个是"人能看到输出"和"将来首启扩容"要用的。
   "util-linux",
+  # ★ kbd 是为了 setkeycodes 进来的（2026-10-16）。
+  #
+  #   云主机没有 PS/2 键盘，而 VNC 控制台发的按键事件照样落到 i8042 上，
+  #   于是 atkbd 每次按键刷两条 "Unknown key"。`setkeycodes 00 255` 是内核
+  #   设计里的正解（255 = ATKBD_KEY_NULL = 静默），而那个命令属于 kbd。
+  #
+  #   ★ 而它【不只是】为这一条噪音：这个包还带 loadkeys / dumpkeys / showkey /
+  #     kbd_mode / chvt / openvt —— 控制台键盘映射和虚拟终端迟早要用。
+  #     见 packages/docs/待办.md 里那一条。
+  #
+  #   它的启动钩子由包自己装（usr/lib/yojigen-os/boot.d/08-console-keyboard）。
+  "kbd",
   # 内核。包里带着 /boot/vmlinuz——磁盘镜像那条路要把它放进 /boot，
   # 所以它必须是【风味里的一个包】，不是一个构建时的外部依赖。
   # 注意它和 linux-headers 是同一份 tarball、同一个 sha256。
