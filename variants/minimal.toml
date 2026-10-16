@@ -150,6 +150,10 @@ packages = [
   # 进程与内存：ps · top · free · uptime · vmstat · kill 的一部分。
   # ★ 最要紧的一条 —— 没有 ps，机器"活了但看不见里面"。
   "procps",
+  # ★ readline 是【行编辑的底子】：上下箭头翻历史、Ctrl-R 搜索、行内改字。
+  #   它被 bash 链接，所以严格说 cli 装 bash 就会带进来 —— 显式写在这里是因为
+  #   【它是"交互式能不能用"的分界线】，而那样的东西该在列表里看得见。
+  "readline",
   # 看文件。less 而不装 more：more 是 less 的一个子集，而 busybox 两个名字
   # 都给了。
   "less",
