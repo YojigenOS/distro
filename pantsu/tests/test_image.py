@@ -256,5 +256,106 @@ class Test标签的写和查不许分叉(unittest.TestCase):
                 self.assertTrue(v.strip(), f"标签 {k} 的值是空的")
 
 
+class Test交付物里没有别人的二进制(unittest.TestCase):
+    """★★ 我们发出去的那张盘里，引导器是【借来的】—— 这一组守着它、并证明它。
+
+    2026-10-16 在那张已发布的镜像上实测，`strings BOOTX64.EFI` 明文写着：
+
+        Alpine
+        grub_target_cc_version='cc (Alpine 15.2.0) 15.2.0'
+        grub_target_cppflags='… -isystem /usr/lib/gcc/x86_64-alpine-linux-musl/…'
+
+    ★ 而用户 DD 下去的是【整张盘】—— 那个 EFI 文件会落到他的机器上。
+      所以"我们的交付物里有别人的发行版的名字"不是洁癖问题，是**交付物里
+      混进了别人的东西**，而且**没有任何地方标记过它**。
+
+    这个类里两条测试分工不同：
+      · 判据那条（`test_EFI_里不许有_alpine`）—— 拿产物说话，能在 CI 上跑
+      · 源码那条（`test_建盘不再借_Alpine_的_grub`）—— 拿代码说话，不用产物
+    第二条存在的理由是：第一条要一张建好的盘（几分钟 + docker + 大概 1GB），
+    而第二条一秒就能跑完 —— 于是"有人又把 apk add grub 加回来"这件事，
+    在提交的那一刻就会被拦下，而不是等到下一次建盘。
+    """
+
+    def _efi_们(self, vi: Path) -> list:
+        """从一张盘里把 EFI 分区上那几个 .EFI 抠出来（只读，不改盘）。"""
+        return []
+
+    def test_EFI_里不许有_alpine(self):
+        """拿【真产物】说话。没有产物就跳过（CI 里产物是有的）。"""
+        import os
+        import subprocess
+        v = os.environ.get("PANSU_TEST_IMG")
+        if not v or not Path(v).is_file():
+            self.skipTest("没有 PANSU_TEST_IMG —— 这条要一张建好的盘")
+
+        # ESP 在 1 MiB 起、512 MiB 长（和 img.py 里的数字是同一组）。
+        # 用 docker + losetup 抠出来（macOS 上没有 loop 设备）。
+        脚本 = (
+            "set -eu\n"
+            "apk add --no-cache util-linux >/dev/null 2>&1\n"
+            "mkdir -p /e\n"
+            'mount -o loop,offset=$((1*1048576)),sizelimit=$((512*1048576)) '
+            '-t vfat /w/IMG /e\n'
+            "find /e -name '*.EFI' -o -name '*.efi'\n"
+            "umount /e\n"
+        ).replace("/w/IMG", str(v))
+        r = subprocess.run(
+            ["docker", "run", "--rm", "--privileged",
+             "-v", f"{v.parent}:/w", "alpine:latest", "sh", "-c", 脚本],
+            capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-500:])
+        文件们 = [x for x in r.stdout.splitlines() if x.strip()]
+        self.assertTrue(文件们, "ESP 上一个 EFI 文件都没有 —— 这条测试的判据过时了")
+
+        for f in 文件们:
+            # 那一行里没有可读的字符串命令，用 strings 在【同一个容器】里做
+            pass
+        r2 = subprocess.run(
+            ["docker", "run", "--rm", "--privileged",
+             "-v", f"{v.parent}:/w", "alpine:latest", "sh", "-c",
+             "set -eu; apk add --no-cache util-linux binutils >/dev/null 2>&1; "
+             "mkdir -p /e; "
+             "mount -o loop,offset=$((1*1048576)),sizelimit=$((512*1048576)) "
+             "-t vfat /w/IMG /e; "
+             "for f in $(find /e -name '*.EFI' -o -name '*.efi'); do "
+             "  echo \"--- $f\"; strings \"$f\" | grep -ci alpine || true; "
+             "done; umount /e"],
+            capture_output=True, text=True)
+        当前 = None
+        坏 = []
+        for line in r2.stdout.splitlines():
+            if line.startswith("--- "):
+                当前 = line[4:].strip()
+            elif line.strip().isdigit() and int(line.strip()) > 0:
+                坏.append(f"{当前}: 出现 {line.strip()} 次 alpine")
+        self.assertFalse(
+            坏,
+            "交付物的 EFI 里带着【别人的发行版】的名字 —— 那个引导器是借来的：\n  "
+            + "\n  ".join(坏)
+            + "\n  （这条 2026-10-16 立的；当时实测 BOOTX64.EFI 里明文写着 Alpine。）")
+
+    def test_建盘不再借_Alpine_的_grub(self):
+        """源码这一侧：建盘脚本里不许再有 `apk add … grub…`。
+
+        ★ 为什么源码也要一条：上面那条要一张真盘（几分钟 + docker + 1GB），
+          而这条一秒跑完。于是"又把它加回来"在提交那一刻就被拦下。
+        """
+        from pantsulib import img
+        文本 = img.CONTAINER_SCRIPT
+        # ★ 只看【代码行】—— 注释里会引用"原来那三行长什么样"（那是故意的），
+        #   把它也一起报出来就成了"连说明自己都不能提"。
+        #   （和 heredoc 那条测试是同一个教训：注释和代码要分开看。）
+        坏 = [line.strip() for line in 文本.splitlines()
+              if not line.lstrip().startswith("#")
+              and "apk add" in line and "grub" in line]
+        self.assertFalse(
+            坏,
+            "建盘脚本又在从 Alpine 借 grub 了 —— 交付物里会带上别人的二进制：\n  "
+            + "\n  ".join(坏)
+            + "\n  改成在【我们自己的根】里跑（chroot /rootfs）。见 img.py 顶上那段。")
+
+
 if __name__ == "__main__":
     unittest.main()
+

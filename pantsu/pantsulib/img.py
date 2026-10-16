@@ -134,9 +134,20 @@ def _tree_mib(path) -> float:
 CONTAINER_SCRIPT = """
 set -eu
 apk add --no-cache util-linux parted e2fsprogs e2fsprogs-extra dosfstools zstd </dev/null >/dev/null 2>&1
-apk add --no-cache grub </dev/null >/dev/null 2>&1 || true
-case "$GRUB_TARGETS" in *i386-pc*) apk add --no-cache grub-bios </dev/null >/dev/null 2>&1 || true ;; esac
-case "$GRUB_TARGETS" in *efi*)     apk add --no-cache grub-efi </dev/null  >/dev/null 2>&1 || true ;; esac
+# ★ grub【不】从这里装 —— 我们自己的根里就有（minimal 的包表里有 grub）。
+#   2026-10-16 之前这三行是这么写的：
+#
+#       apk add --no-cache grub / grub-bios / grub-efi
+#
+#   而后果是交付物里带着【别人的二进制】。实测那张已发布的镜像：
+#
+#       strings BOOTX64.EFI | grep -i alpine
+#           Alpine
+#           grub_target_cc_version='cc (Alpine 15.2.0) 15.2.0'
+#           grub_target_cppflags='… -isystem /usr/lib/gcc/x86_64-alpine-linux-musl/…'
+#
+#   —— 而用户 DD 下去的是整张盘，那个 EFI 会落到他的机器上。
+#   见下面的 chroot 段，以及 pantsu/tests/test_image.py 里那两条测试。
 
 # ★ 兜底：脚本中途死掉也要把所有 loop 设备放掉。实测过——失败的运行会把
 #   它们留在 Docker VM 里，攒够几个之后 losetup 就再也拿不到设备了
@@ -284,20 +295,45 @@ menuentry "Yojigen OS" {
 EOF
 cp /os/boot/grub/grub.cfg /tmp/efi.cfg
 
+# ── 在一个【我们自己的根】里跑 grub，而不是借容器里的 ────────────────
+#
+# ★★ 为什么不是"改一行 --directory"：
+#
+#   ① 这个容器是 Alpine（musl），我们包里的 grub 是 glibc 的 —— 直接跑不起来。
+#   ② 而 .mod 模块和工具【必须同版本】（GRUB 的模块格式不是稳定 ABI，
+#      2.12 的工具读不了 2.14 的模块）—— 所以也不能"用 Alpine 的工具配我们的模块"。
+#
+#   所以只能 chroot 进去跑。而跨架构那件事不用担心：CI 里每个架构跑在
+#   【自己那个架构的 runner】上（ubuntu-26.04 / ubuntu-26.04-arm），
+#   `--platform` 那行在 CI 上是空操作 —— 所以 chroot 永远是原生的。
+#
+# ★ /rootfs 是【只读】挂进来的，而这里只加几个新挂载点，不动它：
+#   tmpfs 给它一个能写的 /tmp；/dev 和 /proc 是 grub 要的；
+#   /os 和 /esp 是它要写的地方（它们本来就在 chroot 外面）。
+mkdir -p /rootfs/mnt/os /rootfs/mnt/esp
+mount -t tmpfs tmpfs /rootfs/tmp
+mount --bind /dev   /rootfs/dev
+mount --bind /proc  /rootfs/proc
+mount --bind /os    /rootfs/mnt/os
+mount --bind /esp   /rootfs/mnt/esp
+cp /tmp/efi.cfg /rootfs/tmp/efi.cfg
+
 for t in $GRUB_TARGETS; do
     case "$t" in
     i386-pc)
         # BIOS：boot.img 进 MBR，core.img 进 bios_grub 分区。
         # ★ 这条路还没有在真启动里验过（本地没有 x86_64 的内核），
         #   等 packages 发出 x86_64 的 linux 包再验。
-        grub-install --target=i386-pc --boot-directory=/os/boot --recheck \\
+        # ★ 路径都换成【chroot 里面】的样子（/os → /mnt/os，/esp → /mnt/esp）。
+        chroot /rootfs /usr/sbin/grub-install --target=i386-pc \\
+          --boot-directory=/mnt/os/boot --recheck \\
           --modules="part_gpt part_msdos ext2 normal linux search search_fs_uuid" "$DISK" >/dev/null 2>&1 \\
           && echo "  ✓ i386-pc（BIOS）" || echo "  ✗ i386-pc 失败" ;;
     *)
         # UEFI：mkstandalone，不用 grub-install（坑 ①）。
-        grub-mkstandalone --format="$t" \\
+        chroot /rootfs /usr/bin/grub-mkstandalone --format="$t" \\
           --modules="part_gpt part_msdos fat ext2 normal linux search search_fs_uuid echo test serial" \\
-          --output="/esp/EFI/BOOT/$EFI_NAME" "boot/grub/grub.cfg=/tmp/efi.cfg" 2>/tmp/efi.err \\
+          --output="/mnt/esp/EFI/BOOT/$EFI_NAME" "boot/grub/grub.cfg=/tmp/efi.cfg" 2>/tmp/efi.err \\
           && echo "  ✓ $t（mkstandalone → $EFI_NAME）" \\
           || { echo "  ✗ $t 失败:"; head -5 /tmp/efi.err | sed 's/^/      /'; } ;;
     esac
