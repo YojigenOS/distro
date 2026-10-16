@@ -314,6 +314,7 @@ mkdir -p /rootfs/mnt/os /rootfs/mnt/esp
 mount -t tmpfs tmpfs /rootfs/tmp
 mount --bind /dev   /rootfs/dev
 mount --bind /proc  /rootfs/proc
+mount --bind /sys   /rootfs/sys
 mount --bind /os    /rootfs/mnt/os
 mount --bind /esp   /rootfs/mnt/esp
 cp /tmp/efi.cfg /rootfs/tmp/efi.cfg
@@ -325,17 +326,31 @@ for t in $GRUB_TARGETS; do
         # ★ 这条路还没有在真启动里验过（本地没有 x86_64 的内核），
         #   等 packages 发出 x86_64 的 linux 包再验。
         # ★ 路径都换成【chroot 里面】的样子（/os → /mnt/os，/esp → /mnt/esp）。
-        chroot /rootfs /usr/sbin/grub-install --target=i386-pc \\
-          --boot-directory=/mnt/os/boot --recheck \\
-          --modules="part_gpt part_msdos ext2 normal linux search search_fs_uuid" "$DISK" >/dev/null 2>&1 \\
-          && echo "  ✓ i386-pc（BIOS）" || echo "  ✗ i386-pc 失败" ;;
+        # ★★ 这里【不许】用 `|| echo "✗ …"` 把失败吞掉。
+        #
+        #   2026-10-16：这条命令在 chroot 里失败过，而建盘那一步【是绿的】——
+        #   因为 `>/dev/null 2>&1` 把原因吃了、`|| echo` 把状态码吃了。
+        #   于是那张盘没有 BIOS 引导代码，启动一次时【串口一个字都没有】，
+        #   而"建盘成功"这四个字已经写在日志里了。
+        #
+        #   ★ 两次失败相隔十分钟，而第一个十分钟本该说出来的：
+        #     失败要【当场】、要【带原因】。
+        if ! chroot /rootfs /usr/sbin/grub-install --target=i386-pc \\
+             --boot-directory=/mnt/os/boot --recheck \\
+             --modules="part_gpt part_msdos ext2 normal linux search search_fs_uuid" "$DISK" \\
+             >/tmp/grub-bios.out 2>&1; then
+            echo "  ✗ i386-pc（BIOS）失败 —— 它得说出来，不然盘上没有引导代码"
+            sed 's/^/      /' /tmp/grub-bios.out | tail -15
+            exit 1
+        fi
+        echo "  ✓ i386-pc（BIOS）" ;;
     *)
         # UEFI：mkstandalone，不用 grub-install（坑 ①）。
         chroot /rootfs /usr/bin/grub-mkstandalone --format="$t" \\
           --modules="part_gpt part_msdos fat ext2 normal linux search search_fs_uuid echo test serial" \\
           --output="/mnt/esp/EFI/BOOT/$EFI_NAME" "boot/grub/grub.cfg=/tmp/efi.cfg" 2>/tmp/efi.err \\
-          && echo "  ✓ $t（mkstandalone → $EFI_NAME）" \\
-          || { echo "  ✗ $t 失败:"; head -5 /tmp/efi.err | sed 's/^/      /'; } ;;
+          || { echo "  ✗ $t 失败:"; tail -15 /tmp/efi.err | sed 's/^/      /'; exit 1; }
+        echo "  ✓ $t（mkstandalone → $EFI_NAME）" ;;
     esac
 done
 
