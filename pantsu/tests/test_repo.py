@@ -82,15 +82,27 @@ class Test命名(unittest.TestCase):
     def test_交付物文件名带日期(self):
         """★ 交付物不可变（0013）：同名覆盖会让"上次那张盘"静默消失。
 
-        所以日期进文件名，而"最新的那张"由 latest.txt 指。
+        所以时间进文件名，而"最新的那张"由 latest.txt 指。
+
+        ★ 2026-10-16：这断言原来是 `== "20261015"`，只查了【天】——
+          而下面那个 class 里补的是"同一天两次会怎样"。那条才是真的。
         """
         with 干净的环境(PANSU_DATE="20261015"):
-            self.assertEqual(repo._stamp(), "20261015")
+            v = repo._stamp()
+            self.assertTrue(v.startswith("20261015T"), v)
+            self.assertRegex(v, r"^20261015T\d{4}$", v)
+
+    def test_传了完整时间戳就原样用(self):
+        """CI / 调试时可以钉死到分钟，那样产物名是可复现的。"""
+        with 干净的环境(PANSU_DATE="20261015T0330"):
+            self.assertEqual(repo._stamp(), "20261015T0330")
 
     def test_不给日期就用今天(self):
+        """没给 PANSU_DATE 就用本机时钟，粒度到【分钟】。"""
         with 干净的环境():
-            self.assertEqual(repo._stamp(),
-                             datetime.date.today().strftime("%Y%m%d"))
+            v = repo._stamp()
+            self.assertTrue(v.startswith(datetime.date.today().strftime("%Y%m%d")), v)
+            self.assertRegex(v, r"^\d{8}T\d{4}$", v)
 
     def test_公开_URL_的形状(self):
         name = "minimal-x86_64-20261012.img.zst"
@@ -277,6 +289,75 @@ class Test没测到的(unittest.TestCase):
         只有真推一次才知道。★ 所以这条【故意留空】：它要在一次真正的发布里
         才算数（image.yml 的 --go 那一步就是它，而且带着真产物）。
         """
+
+
+
+
+
+class Test交付物不可变(会报错的混入, unittest.TestCase):
+    """★★ 这一组守的是一件【2026-10-16 真的发生过】的事。
+
+    那天同一天建了两次 minimal/x86_64：
+
+        04:15  建盘 → ce652348… → 发布
+        04:26  把它 DD 进真机 TX          ← TX 现在跑的就是这张
+        04:30  又建一次 → ac3c6a2c… → **把 ce652348… 覆盖了**
+
+    结果是 **TX 上跑的那张盘，线上没有了** —— 而它上面的 sha256 拿去对账会对不上。
+    没有任何地方说过这件事。
+
+    ★ 而当时那条测试（`test_交付物文件名带日期`）**只查了日期的格式**：
+      它验的是"日期进了文件名"，没验"同一天两次会怎样"。
+      那条 docstring 写对了，而它守的东西只有一半。
+    """
+
+    def _假镜像(self, tmp):
+        f = Path(tmp) / "minimal-x86_64.img.zst"
+        f.write_bytes(b"\x28\xb5\x2f\xfd" + b"x" * 64)
+        return f
+
+    凭据 = dict(S3_AK="ak", S3_SK="sk", S3_BASE_URL="https://s3.example",
+              S3_BUCKET="yojigen")
+
+    def test_同一天的两个时刻给不同的名字(self):
+        """(a) 那一半：粒度从【天】改成【天+时:分】—— 让撞名要撞到同一分钟。"""
+        import datetime as _dt
+        with 干净的环境(PANSU_DATE="20261016"):
+            with mock.patch.object(repo, "datetime") as dt:
+                dt.now.return_value = _dt.datetime(2026, 10, 16, 4, 30)
+                甲 = repo._stamp()
+                dt.now.return_value = _dt.datetime(2026, 10, 16, 4, 55)
+                乙 = repo._stamp()
+        self.assertNotEqual(甲, 乙,
+                            "同一天的两个时刻给出了同一个名字 —— 那第二次会盖掉第一次")
+
+    def test_线上同名就停下(self):
+        """(b) 那一半：不覆盖 —— 除非 --force。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            zst = self._假镜像(tmp)
+            with 干净的环境(**self.凭据):
+                名 = f"minimal-x86_64-{repo._stamp()}.img.zst"
+                name_hint = 名
+                with mock.patch.object(repo, "_线上已有", return_value={名}):
+                    话 = self.应当报错(repo.publish, zst, "minimal", "x86_64", go=True)
+        self.assertIn("不覆盖", 话)
+        self.assertIn("--force", 话, "得告诉人怎么办")
+        self.assertIn(name_hint, 话)
+
+    def test_force_才放行(self):
+        """而 --force 是【有意的】：给了就走。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            zst = self._假镜像(tmp)
+            with 干净的环境(**self.凭据):
+                名 = f"minimal-x86_64-{repo._stamp()}.img.zst"
+                with mock.patch.object(repo, "_线上已有", return_value={名}):
+                    with mock.patch.object(repo, "run_streaming", return_value=(0, "")) as rs:
+                        repo.publish(zst, "minimal", "x86_64", go=True, force=True)
+        self.assertTrue(rs.called, "--force 之后应该真的往下传了")
+
+    def test_查不到线上就不拦(self):
+        """没有凭据 / 网络不通 —— 那时拦下来的是网络，不是覆盖。"""
+        self.assertEqual(repo._线上已有("不存在的命令-xyz", {}, "yojigen:b/x"), set())
 
 
 if __name__ == "__main__":

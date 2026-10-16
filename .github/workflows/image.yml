@@ -61,6 +61,11 @@ on:
         required: false
         type: boolean
         default: false
+      force:
+        description: '覆盖线上同名的那张（默认不覆盖：交付物不可变，见 0013。名字里带时:分，所以正常不会撞）'
+        required: false
+        type: boolean
+        default: false
       skip_missing:
         description: '允许缺包（过渡期用：仓库里还没有的包跳过并大声报出来，根会故意不完整）'
         required: false
@@ -371,7 +376,25 @@ jobs:
           S3_SK: ${{ secrets.S3_SK }}
           S3_BASE_URL: ${{ secrets.S3_BASE_URL }}
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
-        run: ./pantsu/pantsu publish "$FLAVOR" --arch "$ARCH" --go
+        # ★ `--force` 默认【不加】。名字里带时:分（2026-10-16 起），所以正常不会撞；
+        #   真撞上了就说明是同一分钟内又跑了一次 —— 那该是一次【有意的】覆盖，
+        #   而不是默认行为。见 0013 与 repo.publish 里那段注释。
+        run: |
+          EXTRA=""
+          # ★ 这里用 if，而 `[ … ] && EXTRA=…` 那种写法其实【也是安全的】——
+          #   我先以为它会挂，实测之后发现不会，所以这句写的是查过的结论：
+          #
+          #       set -e 不作用于 AND-OR 列表里【非最后】的那个命令。
+          #       所以 `[ 假 ] && 赋值` 返回 1 而不会杀掉脚本。
+          #       （sh 和 bash 都验过，两种写法退出码都是 0。）
+          #
+          #   那为什么还是用 if：一次性说清，不要求读的人知道上面那条规则。
+          #   而这句注释留在是因为——**"我以为会挂"这件事本身值得记一笔**，
+          #   下一个看到它的人不必再怀疑一次。
+          if [ "${{ inputs.force }}" = "true" ]; then
+            EXTRA="--force"
+          fi
+          ./pantsu/pantsu publish "$FLAVOR" --arch "$ARCH" --go $EXTRA
 
       - name: 留存镜像
         if: always()

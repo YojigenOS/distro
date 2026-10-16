@@ -40,8 +40,9 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import subprocess
 import tempfile
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from .common import die, log, run_streaming
@@ -49,9 +50,31 @@ from .common import die, log, run_streaming
 #: 对外可访问的基址。apk 客户端和 reinstall 都用它拼 URL。
 PUBLIC_BASE = os.environ.get("PANSU_PUBLIC_BASE", "https://repo.os.yojigen.cn")
 
-#: 交付物文件名里的日期。CI 里用构建日期，本地默认今天。
+#: 交付物文件名里的那一截时间戳。
+#
+#  ★ 2026-10-16 从"%Y%m%d"改成"%Y%m%dT%H%M"（只有天 → 天+时:分）。
+#
+#    为什么：原来同一天建两次必然同名，而上传用的是 `rclone copy` ——
+#    对已存在的目标，copy 的行为就是【覆盖】，不是报错。于是第二次建盘
+#    会安静地把第一次那张盖掉。
+#
+#    而那一天真的发生了（2026-10-16 晚）：04:15 建了一张并发布，
+#    04:26 把它 DD 进了真机 TX，04:30 又建了一次（带上一处修复）——
+#    第二次把第一次盖掉了。结果是 **TX 上跑的那张盘，线上已经没有了**，
+#    而它上面的 sha256 拿去对账会对不上。没有任何地方说过这件事。
+#
+#    ★ 所以这不是"文件名好不好看"：交付物不可变（0013）要防的是
+#      **"你已经装上去的那张，事后拿不到、也验不了"**。
 def _stamp() -> str:
-    return os.environ.get("PANSU_DATE") or date.today().strftime("%Y%m%d")
+    """`20261016T0430`。
+
+    `PANSU_DATE` 仍然能覆盖它（CI 或调试用）。那个变量是【天】的意思——
+    传 `20261016` 的话时分由本机时钟补；传完整的（带 T）就原样用。
+    """
+    d = os.environ.get("PANSU_DATE")
+    if d:
+        return d if "T" in d else f"{d}T{datetime.now().strftime('%H%M')}"
+    return datetime.now().strftime("%Y%m%dT%H%M")
 
 
 def public_url(flavor: str, arch: str, name: str) -> str:
@@ -131,7 +154,25 @@ def _sha256(p: Path) -> str:
     return h.hexdigest()
 
 
-def publish(zst: Path, flavor: str, arch: str, go: bool = False) -> str:
+def _线上已有(rclone: str, env: dict, dest: str) -> set[str]:
+    """线上那个目录里现在有哪些文件名。查不到就返回空集（不拦人）。
+
+    ★ 为什么失败时【不拦】：这台机器没有凭据、或者网不通，都不该让
+      "发布"这件事停下——那种情况下拦下来的是网络，不是覆盖。
+      而真要覆盖时该响的那一声，是在【能看见线上】的时候响的。
+    """
+    try:
+        r = subprocess.run([*rclone.split(), "lsf", f"{dest}/"],
+                           env=env, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    if r.returncode != 0:
+        return set()
+    return {line.strip() for line in r.stdout.splitlines() if line.strip()}
+
+
+def publish(zst: Path, flavor: str, arch: str, go: bool = False,
+            force: bool = False) -> str:
     if not zst.is_file():
         die(f"找不到镜像 {zst}。先建：pantsu img {flavor} --arch {arch}")
 
@@ -173,6 +214,29 @@ def publish(zst: Path, flavor: str, arch: str, go: bool = False) -> str:
             print(f"    传的时候是这个命令（目标 {dest}/）：")
             print(f"      {rclone} copy <staging> {dest}/")
             return public_url(flavor, arch, name)
+
+        # ★★ 交付物不可变（0013）—— 同名【不许】静默覆盖。
+        #
+        #   查的是线上那个目录里有没有这个名字。有就不许往下走，除非 --force。
+        #
+        #   ★ 而这条检查是 2026-10-16 补的，因为那天它真的发生了：
+        #     04:15 建了一张发布，04:26 把它 DD 进真机 TX，04:30 又建了一张——
+        #     同名，第二次把第一次覆盖掉了。于是 **TX 上跑的那张盘，线上没有了**，
+        #     而它上面的 sha256 拿去对账会对不上。**没有任何地方说过这件事。**
+        if not force:
+            已 = _线上已有(rclone, env, dest)
+            if name in 已:
+                print()
+                die(
+                    f"线上已经有 {name} 了 —— 不覆盖。\n"
+                    f"\n"
+                    f"    「交付物不可变」（0013）要防的是【你已经装上去的那张，\n"
+                    f"     事后拿不到、也验不了】—— 同名覆盖会让它从线上消失，\n"
+                    f"     而装过它的机器再也对不上账。（2026-10-16 真的发生过一次。）\n"
+                    f"\n"
+                    f"    确实要覆盖这一次：加 --force\n"
+                    f"    想留两张：等下一分钟再建（名字里带时:分，不会撞）"
+                )
 
         if not go:
             print()

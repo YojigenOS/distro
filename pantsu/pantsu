@@ -92,12 +92,16 @@ def main() -> None:
                    help="建完顺带准备发布（默认干跑，只列要传什么）")
     g.add_argument("--go", action="store_true",
                    help="配合 --publish：真的传（和 packages 的 `skirt deploy --go` 同一个约定）")
+    g.add_argument("--force", action="store_true",
+                   help="配合 --publish：线上同名时也覆盖（默认不覆盖，见 0013）")
 
     pb = sub.add_parser("publish", help="把已建好的镜像放进仓库（默认干跑）")
     pb.add_argument("name")
     pb.add_argument("--arch", help="默认宿主架构")
     pb.add_argument("--img", help="指定镜像文件（默认 var/<风味>/<风味>-<架构>.img.zst）")
     pb.add_argument("--go", action="store_true", help="真的传（不加就只列要传什么）")
+    pb.add_argument("--force", action="store_true",
+                    help="线上已经有这个名字时也覆盖（默认不覆盖：交付物不可变，见 0013）")
 
     im = sub.add_parser("assemble", help="装根 → 打 tar → 导入成容器镜像")
     im.add_argument("name")
@@ -138,7 +142,7 @@ def main() -> None:
         zst = img.build(a.name, a.arch, a.repo,
                         out=a.out, size=a.size, kernel=a.kernel)
         if a.publish:
-            repo.publish(zst, a.name, resolve_arch(a.arch), go=a.go)
+            repo.publish(zst, a.name, resolve_arch(a.arch), go=a.go, force=a.force)
     elif a.cmd == "assemble":
         image.assemble(a.name, a.arch, a.repo, tag=a.tag, image_name=a.image)
     elif a.cmd == "verify":
@@ -146,7 +150,7 @@ def main() -> None:
     elif a.cmd == "publish":
         arch = resolve_arch(a.arch)
         zst = Path(a.img) if a.img else (VAR_DIR / a.name / f"{a.name}-{arch}.img.zst")
-        repo.publish(zst, a.name, arch, go=a.go)
+        repo.publish(zst, a.name, arch, go=a.go, force=a.force)
     elif a.cmd == "vm":
         sys.exit(vm.run(a.name, a.arch, img=a.img, mem=a.mem, mode=a.mode,
                         accel=False if a.no_accel else None,
