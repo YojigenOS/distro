@@ -369,6 +369,28 @@ jobs:
             exit 1
           fi
 
+      # ★ 拿【刚建出来的那张盘】验一条只有产物才能验的事：
+      #   交付物里的引导器，是不是我们自己的。
+      #
+      #   ★ 在这一步存在之前，那条测试【永远是跳过的】：它要一张真盘，
+      #     而 test.yml 那边没有盘 —— 于是"交付物里混着别人的二进制"这件事
+      #     只能靠人偶尔手动 strings 一下。而它就是这么被发现的：
+      #
+      #         strings BOOTX64.EFI | grep -i alpine
+      #             Alpine
+      #             grub_target_cc_version='cc (Alpine 15.2.0) 15.2.0'
+      #
+      #   ★ 位置和上面那条 SSH 验收一样：它挡的是【发布】，不是建盘。
+      #     盘该建出来（那是我们要的东西）；而"里面装着别人的东西"不该发出去。
+      #
+      #   ★ 它要 docker（要 losetup + mount 去读那张盘）—— runner 上有。
+      - name: 验收 —— 交付物里的引导器是我们自己的吗
+        env:
+          PANSU_TEST_IMG: var/${{ inputs.flavor }}/${{ inputs.flavor }}-${{ inputs.arch }}.img
+        run: |
+          echo "而那张盘: $(ls -la "$PANSU_TEST_IMG" 2>/dev/null | awk '{print $5}') 字节"
+          python3 -m unittest discover -s pantsu/tests -p "test_image.py" -v 2>&1 | tail -25
+
       - name: 发布到仓库
         if: ${{ inputs.deploy }}
         env:
