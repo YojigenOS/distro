@@ -17,7 +17,7 @@
     https://repo.os.yojigen.cn/img/minimal/x86_64/minimal-x86_64-20261012.img.zst
     https://repo.os.yojigen.cn/img/minimal/x86_64/latest.txt
 
-**为什么是 latest.txt 而不是覆盖一个 latest.img**：交付物必须不可变（0005），
+**为什么是 latest.txt 而不是覆盖一个 latest.img**：交付物必须不可变（0013），
 而 reinstall 那条路需要一个【不用改脚本的固定 URL】。一行文本同时满足两件事：
 
     IMG=$(curl -s https://repo.os.yojigen.cn/img/minimal/x86_64/latest.txt)
