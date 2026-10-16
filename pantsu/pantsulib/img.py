@@ -225,6 +225,35 @@ terminal_output console serial
 #   config_directory 是 GRUB 给"主配置所在目录"设的那个变量；而
 #   grub-mkstandalone 那条路（我们用的就是它）可能没设它，所以补一个
 #   prefix 的退路。这两行合起来是各发行版 /etc/grub.d/40_custom 里的标准写法。
+# ★★ 先【自己】读 grubenv —— 2026-10-16 在真机上撞出来的。
+#
+#   少了这几行的后果：reinstall.sh 那类工具**永远不生效**。它们写的 custom.cfg
+#   长这样（照它原本的写法；美元号在下面用「美」字代替，因为本 heredoc 会展开它）：
+#
+#       if ! [ -s 美prefix/grubenv ]; then
+#           … set default="美{next_entry}" …
+#       fi
+#
+#   那段守卫假定"已经有人 load_env 过了"—— 那是 Ubuntu 系的写法，那边
+#   /etc/grub.d/00_header 会先做这一步。而【我们的 grub.cfg 里没有】，
+#   于是它每次判定"读过了"，整段跳过，next_entry 永远没被用上。
+#
+#   ★ 铁证（TX 上实测）：装了一次之后 grubenv 里的 next_entry=reinstall (dd)
+#     【还在】—— 那段代码只要跑过就会把它清掉（set next_entry=; save_env）。
+#     它还在，就说明那段一次都没跑。
+#
+#   ★ 而这是在"已经加了 source custom.cfg 之后"仍然发生的 —— 两个条件缺一不可：
+#     ① 得去读 custom.cfg        （下面那几行）
+#     ② 得先把 grubenv 读进来     （这几行）
+#
+#   ★ 而当天晚上的印证：在 TX 的手写版 grub.cfg 里补上这几行之后，
+#     它【当场】就进了 reinstall 的临时环境（Alpine 内核 6.18.52-0-lts）。
+#     ——而在此之前，同一个 custom.cfg 被完全无视了两次。
+set grubenv="\\$prefix/grubenv"
+if [ -s \\$grubenv ]; then
+    load_env --file \\$grubenv
+fi
+
 if [ -f \\${config_directory}/custom.cfg ]; then
     source \\${config_directory}/custom.cfg
 elif [ -z "\\${config_directory}" -a -f \\$prefix/custom.cfg ]; then
