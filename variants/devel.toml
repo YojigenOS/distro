@@ -147,4 +147,36 @@ packages = [
   # initramfs 用（pantsu vm --mode direct 会打 cpio 归档）。base 不需要它——
   # 它是【做可启动产物】的工具，不是运行时依赖。
   "cpio",
+
+  # ---- 那些"给别人用"的构建工具（2026-10-17 补）----
+  #
+  # ★★★ 这一节补的是【一条已经写下来的不变式】。
+  #
+  #   §1.5.B 里写着：「配方能用什么 ⟺ devel 里有什么」——而它一直是【意图】，
+  #   没人量过。2026-10-17 量了：89 个配方里 **16 个**的 build 依赖不在这里。
+  #
+  #   而它的第一个可观测后果就是那天的那次失败：
+  #
+  #       grep: configure: error: PCRE support not available
+  #
+  #   grep 的配方【声明了】pcre2 作 build 依赖 ✓，而环境里没有它 ✗ ——
+  #   于是 configure 找不到 libpcre2-8，响亮地报错（那是配方想要的：见
+  #   grep/spec.toml 里 `--enable-perl-regexp` 那段）。
+  #
+  #   ★ 而下面这些是【统计算出来的】，不是挑的：把每个配方声明的 build 依赖
+  #     和这个风味的闭包对一遍，缺的那批里出现最多的就是它们。
+  #
+  #   ★ 而"有几个包要它"那个数字写在注释里，是为了让下一个人知道【删掉一行
+  #     会打断几个包】。它和上面那句「bison 是 glibc 要的」是同一种信息。
+
+  "flex",      # 7 个包要：linux · elfutils · libpcap · iproute2 · bc · grub · sudo
+  "ninja",     # 4 个：libevent · dbus · iputils · fastfetch（meson 的默认后端）
+  "meson",     # 3 个：dbus · iputils · apk-tools
+  "openssl",   # 4 个：linux · openssh · apk-tools · sudo
+  "libcap",    # 2 个：chrony · iputils
+  "pip",       # meson 要（它自己是个 python 程序）
+  "bc",        # linux 的构建脚本要用
+  "bzip2",     # elfutils
+  "elfutils",  # linux 那条 objtool 链
+  "popt",      # logrotate
 ]
