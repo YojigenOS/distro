@@ -166,6 +166,44 @@ chown -R "$HOST_UID:$HOST_GID" /newroot
 
 # ── 前置检查 ──────────────────────────────────────────────────────────────
 
+def _case_sensitive(d: Path) -> bool:
+    """这个目录所在的文件系统区不区分大小写？
+
+    ★★★ 2026-10-20：这条检查是为了把一个**很难看出来的失败**提到最前面。
+
+    `usr/share/terminfo/` 下同时有 `A/` 和 `a/`（还有 `2/2621A` 和
+    `2/2621a`）。而在**大小写不敏感**的文件系统上（macOS 的 APFS 默认如此）
+    它们被合并成同一个目录 / 同一个文件：
+
+        $ ls -di …/terminfo/A …/terminfo/a
+        305376453 …/terminfo/A
+        305376453 …/terminfo/a          ← 同一个 inode
+
+    于是打包时那 12148 个成员变成 12115 个，而 `tar` 报的是
+
+        tar: ./usr/share/terminfo/2/2621A: File removed before we read it
+
+    —— **"removed" 其实是"被合并"**。那条报错没有一处提到大小写，而它出现在
+    装完 65 个包之后、打包的最后一步。查它花了一整轮。
+
+    ★ 而它**必须**在这里挡住：要是它悄悄成了，产物里会少掉 ~1000 个 terminfo
+      条目 —— 一个**看起来正常的坏交付物**。而那正是这个项目最怕的形状。
+    """
+    probe = d / ".yojigen-case-probe"
+    try:
+        probe.write_text("", encoding="utf-8")
+        # 同一个名字改成大写，还能找到 = 不区分大小写
+        return not (d / ".YOJIGEN-CASE-PROBE").exists()
+    except OSError:
+        # 写不进去就别拦（可能是没权限建文件），让后面的步骤自己报
+        return True
+    finally:
+        try:
+            probe.unlink()
+        except OSError:
+            pass
+
+
 def _keys() -> list[Path]:
     if not KEYS_DIR.is_dir():
         die(f"找不到 {KEYS_DIR.relative_to(ROOT)}/。先跑 packages/scripts/keys.sh gen。")
@@ -257,6 +295,24 @@ def build(name: str, arch_requested: str | None = None, repo: str = DEFAULT_REPO
     log("公钥", f"{len(keys)} 个（会烤进交付物的 /etc/apk/keys/）")
 
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # ★ 大小写不敏感的盘上做不出正确的根。拦在最前面，别等打包那一步报
+    #   `File removed before we read it`（那条报错一个字都没提大小写）。
+    if not _case_sensitive(out_dir):
+        die(
+            f"{out_dir.relative_to(ROOT)}/ 所在的磁盘【不区分大小写】。\n"
+            "       这个根里 `usr/share/terminfo/` 同时有 `A/` 和 `a/`、"
+            "`2/2621A` 和 `2/2621a`，\n"
+            "       而在这种盘上它们会被合并成同一个 —— 于是打包时少掉约 1000 个\n"
+            "       terminfo 条目，而 `tar` 报的是一句和大小写无关的\n"
+            "       `File removed before we read it`。\n"
+            "\n"
+            "       macOS 的 APFS 默认就是这种。两种办法：\n"
+            "         · 让它跑在 Linux 上（CI 就是），或者\n"
+            "         · 把 var/ 放到一个【大小写敏感】的卷上\n"
+            "           （macOS：磁盘工具里新建 APFS 卷时选「区分大小写」）"
+        )
+
     root_dir.mkdir(parents=True, exist_ok=True)
 
     print()
