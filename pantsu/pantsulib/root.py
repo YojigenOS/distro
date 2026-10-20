@@ -289,6 +289,36 @@ def build(name: str, arch_requested: str | None = None, repo: str = DEFAULT_REPO
                 ]
             else:
                 lines.append("       完整输出见上面。")
+
+            # ★★★ 2026-10-20：`tar: … File removed before we read it` 有一个具体成因。
+            #
+            #   实测（macOS + Docker Desktop）：`pantsu rootfs minimal` 在打包那一步死，
+            #   报一批 `tar: ./usr/share/terminfo/2/2621A: File removed before we read
+            #   it`。而【同一条 tar 命令】在容器的本地目录里跑，145 MB、零错误。
+            #
+            #   差别在 `/newroot` 是【宿主绑定挂载】。也就是说 13k 个文件先被 apk
+            #   写到宿主的文件系统上，tar 再从同一个挂载读回来 —— 而 macOS 上的
+            #   VirtioFS 在成千上万个小文件上会丢。实测那个根里
+            #   `usr/share/terminfo/2/2621A` 在宿主视图里【不存在】。
+            #
+            #   ★ 而根因不在这个仓库：Linux（CI 就是）上同一条路是好的。所以这里
+            #     【不猜着改架构】—— 只把那个错误变成一句能行动的话。
+            #     （`image.py` 的 assemble 也走这条路。）
+            if "File removed before we read it" in out:
+                lines += [
+                    "",
+                    "       ★ 这一条有具体成因：`/newroot` 是【宿主绑定挂载】，而",
+                    "         宿主文件系统在打包过程中【丢了文件】—— 上面那些就是。",
+                    "         实测：同一条 tar 命令在容器的本地目录里跑，零错误。",
+                    "",
+                    "         已知会这样：macOS + Docker Desktop（VirtioFS，13k 个小文件）。",
+                    "         而 Linux 上（CI 就是）同一条路是好的。",
+                    "",
+                    "         要一个干净的根，就让它跑在 Linux 上：",
+                    "           · push 之后在 CI 里跑（image.yml / release.yml 走的就是这条）",
+                    "           · 或者在一台 Linux 机器上跑同一条命令",
+                ]
+
             die("\n".join(lines))
 
     if not tar_path.is_file():
