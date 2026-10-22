@@ -95,3 +95,72 @@ iptables        INPUT policy ACCEPT，没有拦 35044 的规则 ✓
 - `server` 的**硬化**那一层（ssh 配置、只认公钥、禁 root 密码…）—— 描述里写着"还没做"
 - `chrony` / `cronie` 的服务定义（现在 `services` 里只有 `sshd`）
 - 1Panel 的 `docker` 管理（它自己的容器功能）没在真机上验过
+
+---
+
+# 附：它报的那些错，一条条按源码对
+
+2026-10-22 下午。看完 1Panel 的源码（`1Panel-dev/1Panel`）之后，报错的来源都
+有确定答案了 —— 不再靠猜。
+
+## ① `$LOCAL_IP` —— **不是我们的问题**
+
+`core/cmd/server/cmd/user-info.go`：
+
+```go
+address := getSettingByKey(agentDB, "SystemIP")
+domain  := getSettingByKey(db, "BindDomain")
+if len(domain) != 0 { address = domain }
+...
+if address == "" { address = "$LOCAL_IP" }
+```
+
+而 `SystemIP` 是迁移时**故意建成空值**的（`agent/init/migration/.../init.go:144`），
+由 UI 写入。所以任何发行版上一装完 `1pctl user-info` 都会打 `$LOCAL_IP` ——
+在面板设置里填一次"系统 IP"就正常。**跟我们的系统无关。**
+
+## ② `ip6tables ... (legacy): Table does not exist` —— 我们的漏
+
+上一轮把 `iptables` 三个名字改指 nft 了，**漏了 `ip6tables` 那三个**。
+现在六个名字全指 `xtables-nft-multi`，实测 `ip6tables v1.8.12 (nf_tables)` ✓
+
+## ③ 防火墙页 —— 缺 `nft`
+
+1Panel v2 的防火墙走 `nftables_helper`（源码里 `nft` 38 处引用）。所以补了：
+
+| 包 | 版本 | 为什么 |
+|---|---|---|
+| `nftables` | 1.1.6 | 1Panel 防火墙页的判据 |
+| `libnftnl` | 1.2.8 → **1.3.1** | nftables 的 configure 硬要 `>= 1.3.1` |
+
+★ 而 nftables 的 configure 里**嵌了一段 bash 循环**（`for ((i = 56; …))`），
+顶上是 `#! /bin/sh` —— 我们的 /bin/sh 是 dash，于是
+`config.status: Bad for loop variable`。为此给驱动加了
+`[build] configure_shell = "/bin/bash"`（走 `CONFIG_SHELL` 这个标准口子）。
+
+## ④ `Docker Compose command not found` —— 我自己卸掉的
+
+前面验 `post-install` 时 `apk del docker docker-buildx docker-compose`，只装回了
+`docker`。装回来就没了。
+
+## ⑤ 而现在还缺的（源码里数出来的，都用 `cmd.Which` 判在不在）
+
+| 缺的 | 1Panel 哪里用 | 影响 |
+|---|---|---|
+| `zip` / `unzip` | 文件管理、应用安装包 | 压缩/解压相关操作报错 |
+| `wget` | 部分下载路径 | 少数场景 |
+| `git` | 应用源码拉取 | 一部分应用装不上 |
+| `systemctl` / `hostnamectl` / `timedatectl` | 服务页、主机名页、时间页 | **这几页在我们这儿没有对等物**（我们没有 systemd） |
+| `supervisord` | 老版本的进程守护 | 视应用而定 |
+
+★ 前四个是**真该补的包**（像 nftables 一样写配方就行）。
+★ 后两个是**取舍**：要么给它们写一层"读同样的内核接口"的兼容程序（像我们给
+  `service` 做的那样），要么认下"这几页不支持"。这个得定。
+
+## 现在的状态
+
+```
+nft v1.1.6 · iptables (nf_tables) · ip6tables (nf_tables) · docker 29.9.2
+面板 HTTP 200 · agent + core 两个进程都在
+重启面板之后【没有新的 ERROR】（最后一条是 08:57 的 ip6tables，那是修复前）
+```
