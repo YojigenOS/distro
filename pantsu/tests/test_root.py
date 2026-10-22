@@ -264,7 +264,8 @@ class Test交给容器的输入(unittest.TestCase):
             return (0, "")
 
         with mock.patch.object(root, "run_streaming", 假的_run_streaming):
-            rc, _ = root._install(list(pkgs), repo, Path("/tmp/根"), Path("/tmp/出"),
+            rc, _ = root._install(list(pkgs), repo, Path("/tmp/根"), Path("/tmp/出"), [],
+                                   
                                   f"{name}-{arch}.tar.gz", name, arch)
         self.assertEqual(rc, 0)
         return seen["cmd"]
@@ -340,19 +341,24 @@ class Test装根的流程(会报错的混入, unittest.TestCase):
         out = io.StringIO()
         calls: dict = {"pkgs": []}
 
-        def 假的_install(pkgs, repo, root_dir, out_dir, tar_name, name, arch):
+        def 假的_install(pkgs, repo, root_dir, out_dir, services, tar_name, name, arch):
             calls["pkgs"].append(list(pkgs))
             if len(calls["pkgs"]) == 1:
                 return (1, 第一次的输出)
             (out_dir / tar_name).write_bytes("假装这是 tar".encode())  # 第二次当它装成了
             return (0, "装好了\n")
 
+        # ★ 这三条"缺包"的测试要验的是【装根失败怎么报】，而 build() 开头有一道
+        #   "这块盘区分大小写吗"的守卫 —— 在 macOS 上它会先 die，于是这些测试
+        #   拿到的是那句跟大小写有关的话，而不是它们该验的那句。
+        #   （CI 是 Linux，所以一直没暴露 —— 2026-10-22 本地跑才发现。）
         with tempfile.TemporaryDirectory() as tmp, \
              mock.patch.object(root, "VAR_DIR", Path(tmp)), \
              mock.patch.object(root, "ROOT", Path(tmp)), \
              mock.patch.object(root, "_check_repo", lambda *_: None), \
              mock.patch.object(root, "_keys", lambda: [Path("k.rsa.pub")]), \
              mock.patch.object(root, "_install", 假的_install), \
+             mock.patch.object(root, "_case_sensitive", lambda *_: True), \
              安静(), contextlib.redirect_stdout(out):
             if skip_missing:
                 calls["tar"] = root.build("base", "aarch64", "http://仓库.example",

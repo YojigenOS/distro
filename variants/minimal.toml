@@ -38,6 +38,11 @@ name        = "minimal"
 kind        = "disk"
 description = "最小可启动系统：能开机、能串口、能 SSH"
 
+# ★ 2026-10-22（决策记录 0024）：**装 openssh 不等于开机起 sshd。**
+# 后者是这张表的决定 —— minimal 要它起来（0008：能开机、能串口、能 SSH），
+# 而 base（容器）不要。判据落地在 /etc/services/ 里的一条软链。
+services = ["sshd"]
+
 packages = [
   # ── 用户态：和 base 同一套 ──────────────────────────────────────────
   # 目录骨架最先——它提供 /usr、/etc，以及 /lib → usr/lib 这些 usr-merge

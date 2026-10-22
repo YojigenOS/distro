@@ -112,6 +112,35 @@ echo
 echo "── apk audit ──"
 apk --root /newroot audit --system 2>&1 | head -10 || true
 
+# ── 启用这个风味声明的服务（决策记录 0024）────────────────────────────────
+#
+# 「装 openssh」和「开机起 sshd」是两件事，后者由风味决定。落地方式就是一条
+# 软链：`/etc/services/<名字>` → `/usr/lib/yojigen-os/services/<名字>`。
+# `/init` 启动时扫这个目录（见 yojigen-os-init 的 30-services）。
+#
+# ★ 而"声明了却没人提供"必须【当场失败】：一个打错的服务名（`sshd ` 多一个
+#   空格、或者那个包没在这个风味里）会让"启用了但永远不起"，而症状出现在
+#   【开机之后、连不上的时候】，离这一行很远。
+#
+# ★ 用软链而不是拷贝：包升级时定义跟着更新，而管理员的启用/停用决定（那条
+#   软链本身在 /etc 里）不会被覆盖 —— /etc 是 conffiles 的地盘。
+if [ -n "$SERVICES" ]; then
+    echo
+    echo "── 启用的服务 ──"
+    mkdir -p /newroot/etc/services
+    for s in $SERVICES; do
+        def="/newroot/usr/lib/yojigen-os/services/$s"
+        if [ ! -e "$def" ]; then
+            echo "✗ 风味声明了服务 '$s'，但没有哪个包提供 $def" >&2
+            echo "  这个风味的根里有这些定义：" >&2
+            ls -1 /newroot/usr/lib/yojigen-os/services/ 2>/dev/null | sed 's/^/    /' >&2
+            exit 1
+        fi
+        ln -sf "/usr/lib/yojigen-os/services/$s" "/newroot/etc/services/$s"
+        echo "   $s → /usr/lib/yojigen-os/services/$s"
+    done
+fi
+
 # ── 组成清单 ──────────────────────────────────────────────────────────────
 #
 # 一张盘出了问题，第一个要问的是"它到底是哪些包的哪些版本"。apk 自己的库里
@@ -241,6 +270,7 @@ def _check_repo(repo: str, arch: str) -> None:
 # ── 装 ────────────────────────────────────────────────────────────────────
 
 def _install(pkgs: list[str], repo: str, root_dir: Path, out_dir: Path,
+             services: list[str], 
              tar_name: str, name: str, arch: str) -> tuple[int, str]:
     """在容器里装根 + 打 tar。返回 (退出码, 合并后的输出)。"""
     #
@@ -257,6 +287,7 @@ def _install(pkgs: list[str], repo: str, root_dir: Path, out_dir: Path,
         "-v", f"{KEYS_DIR}:/keys:ro",
         "-e", f"REPO={repo}",
         "-e", f"PKGS={' '.join(pkgs)}",
+        "-e", f"SERVICES={' '.join(services)}",
         "-e", f"TAR_NAME={tar_name}",
         "-e", f"TAR_MTIME={TAR_MTIME}",
         # 组成清单要的四样：它是什么、给哪个架构、从哪儿装的、什么时候装的。
@@ -278,6 +309,9 @@ def build(name: str, arch_requested: str | None = None, repo: str = DEFAULT_REPO
     v = flavor.load(name)
     arch = resolve_arch(arch_requested)
     pkgs = list(v["packages"])
+    # ★ 这个风味启用哪些服务（决策记录 0024）。默认空 —— "装 openssh" 不等于
+    #   "开机起 sshd"，那件事由风味声明。
+    services = list(v.get("services") or [])
 
     out_dir = VAR_DIR / name
     root_dir = out_dir / f"rootfs-{arch}"
@@ -317,7 +351,7 @@ def build(name: str, arch_requested: str | None = None, repo: str = DEFAULT_REPO
 
     print()
     log("装根", f"{len(pkgs)} 个包，从 {repo}")
-    rc, out = _install(pkgs, repo, root_dir, out_dir, tar_path.name, name, arch)
+    rc, out = _install(pkgs, repo, root_dir, out_dir, services, tar_path.name, name, arch)
 
     skipped: list[str] = []
     if rc != 0:
@@ -331,7 +365,7 @@ def build(name: str, arch_requested: str | None = None, repo: str = DEFAULT_REPO
             pkgs = [p for p in pkgs if p not in missing]
             print()
             log("重试", f"{len(pkgs)} 个包")
-            rc, out = _install(pkgs, repo, root_dir, out_dir, tar_path.name, name, arch)
+            rc, out = _install(pkgs, repo, root_dir, out_dir, services, tar_path.name, name, arch)
 
         if rc != 0:
             lines = ["装根失败（退出码 %d）" % rc]

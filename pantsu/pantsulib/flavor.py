@@ -38,8 +38,21 @@ def names() -> list[str]:
     return sorted(p.stem for p in VARIANTS_DIR.glob("*.toml"))
 
 
-def load(name: str) -> dict:
-    """读一个风味定义，顺带校验。"""
+def load(name: str, _seen: tuple[str, ...] = ()) -> dict:
+    """读一个风味定义，顺带校验。
+
+    ★ 2026-10-22 加了 `extends`：一个风味可以在另一个风味的基础上【加】东西。
+
+      成立的理由是 `server`：它就是 `minimal` 加上"sshd 自启"（硬化那一层还没
+      做）。没有 `extends` 的话，那 46 行包列表要复制一份 —— 而复制的那份会漂移，
+      漂移的症状是"server 少了 minimal 后来加的那个包"，很难在事后看出来。
+
+      ★ 规则：`packages` 和 `services` 都是【父在前、自己在后】，去重保序；
+        `kind` 没写就跟着父。而环路当场报错（不然是无限递归）。
+    """
+    if name in _seen:
+        die(f"风味 extends 成环了：{' → '.join(_seen + (name,))}")
+
     path = VARIANTS_DIR / f"{name}.toml"
     if not path.is_file():
         known = names()
@@ -53,16 +66,29 @@ def load(name: str) -> dict:
         die(f"{path}: 缺少 [variant] 段")
     v = data["variant"]
 
-    for key in ("name", "packages"):
-        if key not in v:
-            die(f"{path}: [variant] 缺少 {key}")
+    parent_name = v.get("extends")
+    if "name" not in v:
+        die(f"{path}: [variant] 缺少 name")
+    # ★ 有 extends 时 packages 可以不写（那就等于"父的那些，一个不加"）；
+    #   没有 extends 就必须写 —— 一个空风味没有意义。
+    if "packages" not in v and not parent_name:
+        die(f"{path}: [variant] 缺少 packages（没有 extends 时它是必填的）")
 
     # 文件名和 name 必须一致。不一致时「按名字找文件」会有两个答案，而症状是
     # 两个风味的内容互相串——这种错很难在事后看出来。
     if v["name"] != name:
         die(f"{path}: [variant] name 是 {v['name']!r}，和文件名 {name!r} 对不上")
 
-    if not isinstance(v["packages"], list) or not v["packages"]:
+    # ★ 说清是【哪一种】不对：packages = "glibc" 是合法的 toml，而字符串是
+    #   可迭代的——' '.join("glibc") 会变成 "g l i b c"，一串单字母的包名。
+    #   原来这里一律报"不能为空"，而它明明不空，人会往错的方向查。
+    if "packages" in v and not isinstance(v["packages"], list):
+        die(f"{path}: packages 必须是一个非空的列表"
+            f"（现在拿到的是 {type(v['packages']).__name__}）")
+    # ★ 没有 extends 时，空清单等于"装出来一个空根"—— 而那要等到起不来才发现。
+    if not v.get("packages") and not parent_name:
+        die(f"{path}: packages 必须是一个非空的列表"
+            f"（空清单装出来的根是空的）")
         # ★ 说清是【哪一种】不对：packages = "glibc" 是合法的 toml，而字符串
         #   是可迭代的——' '.join("glibc") 会变成 "g l i b c"，一串单字母的
         #   包名。原来这里一律报"不能为空"，而它明明不空，人会往错的方向查。
@@ -77,6 +103,46 @@ def load(name: str) -> dict:
         )
 
     v["_kind"] = kind
+
+    # ── services：这个风味【启用】哪些服务（决策记录 0024）──────────────────
+    #
+    # 「装 openssh」和「开机起 sshd」是两件事，而后者是风味的决定：
+    # 同一个 openssh 包，minimal 要它起来、base（容器）不要。
+    #
+    # ★ 所以 `services` 里写的是【服务名】，它对应
+    #   `/usr/lib/yojigen-os/services/<名字>` 那份定义（由某个包提供）。
+    #   而"这个风味里到底有没有那份定义"只能在组装时才知道 —— 见 root.py 里那段
+    #   校验（**声明了却没人提供 → 当场失败**，不猜）。
+    services = v.get("services", [])
+    if not isinstance(services, list):
+        die(f"{path}: services 必须是列表，现在拿到的是 {type(services).__name__}")
+    for x in services:
+        if not isinstance(x, str) or not x.strip():
+            die(f"{path}: services 里有一项不是非空字符串: {x!r}")
+        if x != x.strip() or "/" in x or " " in x:
+            # ★ 这些形状都会让"启用了但永远不起"，而症状出现在开机之后。
+            die(f"{path}: 服务名 {x!r} 不合法（不能有空格或斜杠，且要原样写）")
+    v["services"] = services
+
+    # ── 合并父风味（extends）────────────────────────────────────────────────
+    if parent_name:
+        if not isinstance(parent_name, str) or parent_name == name:
+            die(f"{path}: extends = {parent_name!r} 不合法（要么是风味名，要么不写）")
+        parent = load(parent_name, _seen + (name,))
+        # 父在前、自己在后；去重保序（重复的包名 apk 也能装，但列表读起来会乱）
+        见 = set()
+        合并 = []
+        for x in list(parent["packages"]) + list(v.get("packages") or []):
+            if x not in 见:
+                见.add(x)
+                合并.append(x)
+        v["packages"] = 合并
+        v["services"] = [x for x in dict.fromkeys(
+            list(parent["services"]) + list(v["services"]))]
+        v["_extends"] = parent_name
+        # kind 没写就跟着父（`server` 是 disk，因为 minimal 是 disk）
+        if "kind" not in v and "_kind" in parent:
+            v["_kind"] = parent["_kind"]
     v["_path"] = path
     return v
 

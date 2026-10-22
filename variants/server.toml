@@ -1,0 +1,30 @@
+# server —— 服务器
+#
+# **2026-10-22 建。** 而它现在是**很薄的一层**，理由说清楚：
+#
+#   `server` = `minimal` + sshd 自启（+ 将来的硬化）
+#
+# `minimal` 已经有 46 个包，其中 chrony / cronie / logrotate / sudo / tzdata
+# 都在 —— 也就是说"服务器该有的那些东西"它本来就有，差别只在【要不要自动起】。
+#
+# ★ 所以这个文件用 `extends` 而不是复制那 46 行：复制的那份会漂移，而漂移的
+#   症状是"server 少了 minimal 后来加的那个包"，很难在事后看出来。
+#
+# ── "自启"这件事为什么写在这里，而不是写在 openssh 那个包里 ──────────────
+#
+# 决策记录 0024：**服务由风味启用，包只提供定义。** 同一个 openssh 包，
+# minimal 要它起来、base（容器）不要 —— 那是风味该回答的问题。
+
+[variant]
+name        = "server"
+extends     = "minimal"
+kind        = "disk"
+description = "服务器：minimal + sshd 自启（硬化那一层还没做）"
+
+# ★ 现在只有 sshd 有服务定义。chrony / cronie 那两个还没有 —— 而
+#   `services` 里写一个没有定义的名字会在【组装时当场失败】（见 root.py 那段
+#   校验），那是对的：写在这里的每一个名字都得真的能起。
+services = ["sshd"]
+
+# 没有 packages：这个风味现在一个包都不加，就是 minimal 的那些。
+# 加东西的时候写在这里，会接在父的列表后面（去重保序）。

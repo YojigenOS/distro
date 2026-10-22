@@ -258,3 +258,115 @@ class Test展示(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Test_extends(unittest.TestCase):
+    """一个风味可以【在另一个的基础上加东西】（2026-10-22 加）。
+
+    ★ 起因是 `server`：它就是 `minimal` 加上"sshd 自启"。没有 `extends` 的话，
+      minimal 那 46 行包列表要复制一份 —— 而复制的那份会漂移，漂移的症状是
+      "server 少了 minimal 后来加的那个包"，很难在事后看出来。
+    """
+
+    def _造(self, tmp: Path, 名: str, 内容: str):
+        (tmp / f"{名}.toml").write_text(内容, encoding="utf-8")
+
+    def _load(self, tmp: Path, 名: str):
+        with mock.patch.object(flavor, "VARIANTS_DIR", tmp), 安静():
+            return flavor.load(名)
+
+    def test_父的包接在前面_自己在后面(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self._造(tmp, "父", '[variant]\nname = "父"\npackages = ["a", "b"]\n')
+            self._造(tmp, "子", '[variant]\nname = "子"\nextends = "父"\npackages = ["c"]\n')
+            v = self._load(tmp, "子")
+        self.assertEqual(v["packages"], ["a", "b", "c"])
+
+    def test_重复的包只留一次(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self._造(tmp, "父", '[variant]\nname = "父"\npackages = ["a", "b"]\n')
+            self._造(tmp, "子", '[variant]\nname = "子"\nextends = "父"\npackages = ["b", "c"]\n')
+            v = self._load(tmp, "子")
+        self.assertEqual(v["packages"], ["a", "b", "c"], "父在前、保序、去重")
+
+    def test_kind_没写就跟着父(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self._造(tmp, "父", '[variant]\nname = "父"\nkind = "disk"\npackages = ["a"]\n')
+            self._造(tmp, "子", '[variant]\nname = "子"\nextends = "父"\n')
+            v = self._load(tmp, "子")
+        self.assertEqual(v["_kind"], "disk")
+
+    def test_services_也合并(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self._造(tmp, "父", '[variant]\nname = "父"\npackages = ["a"]\nservices = ["x"]\n')
+            self._造(tmp, "子", '[variant]\nname = "子"\nextends = "父"\nservices = ["y"]\n')
+            v = self._load(tmp, "子")
+        self.assertEqual(v["services"], ["x", "y"])
+
+    def test_成环要报错(self):
+        """★ 不报错就是无限递归 —— 而那会以一个看不懂的 RecursionError 出现。"""
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self._造(tmp, "甲", '[variant]\nname = "甲"\nextends = "乙"\n')
+            self._造(tmp, "乙", '[variant]\nname = "乙"\nextends = "甲"\n')
+            with self.assertRaises(SystemExit):
+                self._load(tmp, "甲")
+
+    def test_有_extends_就可以不写_packages(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self._造(tmp, "父", '[variant]\nname = "父"\npackages = ["a"]\n')
+            self._造(tmp, "子", '[variant]\nname = "子"\nextends = "父"\n')
+            v = self._load(tmp, "子")
+        self.assertEqual(v["packages"], ["a"])
+
+
+class Test_services_字段(unittest.TestCase):
+    """`services` 是这个风味【启用】哪些服务（决策记录 0024）。"""
+
+    def _造(self, tmp: Path):
+        (tmp / "试.toml").write_text(
+            '[variant]\nname = "试"\npackages = ["a"]\nservices = ["sshd"]\n',
+            encoding="utf-8")
+
+    def test_正形(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self._造(tmp)
+            with mock.patch.object(flavor, "VARIANTS_DIR", tmp), 安静():
+                v = flavor.load("试")
+        self.assertEqual(v["services"], ["sshd"])
+
+    def test_不写就是空(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            (tmp / "试.toml").write_text('[variant]\nname = "试"\npackages = ["a"]\n',
+                                        encoding="utf-8")
+            with mock.patch.object(flavor, "VARIANTS_DIR", tmp), 安静():
+                v = flavor.load("试")
+        self.assertEqual(v["services"], [])
+
+    def test_名字里有空格要报错(self):
+        """★ `"sshd "` 多一个空格会让"启用了但永远不起"，而症状在开机之后。"""
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            (tmp / "试.toml").write_text(
+                '[variant]\nname = "试"\npackages = ["a"]\nservices = ["sshd "]\n',
+                encoding="utf-8")
+            with mock.patch.object(flavor, "VARIANTS_DIR", tmp), 安静(), \
+                 self.assertRaises(SystemExit):
+                flavor.load("试")
+
+    def test_仓库里的_server_是从_minimal_来的(self):
+        """真的那份文件 —— 这条防的是"server.toml 写坏了而没人发现"。"""
+        with 安静():
+            v = flavor.load("server")
+            m = flavor.load("minimal")
+        self.assertEqual(v["_extends"], "minimal")
+        self.assertEqual(v["packages"], m["packages"], "server 现在一个包都不加")
+        self.assertIn("sshd", v["services"])
+        self.assertEqual(v["_kind"], "disk", "kind 跟着 minimal")
