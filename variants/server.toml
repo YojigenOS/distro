@@ -26,5 +26,17 @@ description = "服务器：minimal + sshd 自启（硬化那一层还没做）"
 #   校验），那是对的：写在这里的每一个名字都得真的能起。
 services = ["sshd"]
 
-# 没有 packages：这个风味现在一个包都不加，就是 minimal 的那些。
-# 加东西的时候写在这里，会接在父的列表后面（去重保序）。
+# ★★ /bin/sh 用 bash，不用 dash（2026-10-22 定的）。
+#
+#   理由是一条具体的：1Panel 的 `/etc/init.d/1panel-core` 在 `#!/bin/sh` 里写了
+#   bash 数组（`local rc_dirs=( … )`）。dash 不认，于是那个服务**装了但重启之后
+#   起不来**（`Syntax error: "(" unexpected`）。
+#
+#   而这不是推翻 dash 那次决定 —— `dash` 配方里那条理由仍然成立（"只要 /bin/sh
+#   是 bash，大家就会用扩展"）。所以 base / devel / minimal **仍然是 dash**，
+#   只有 server 换：它是【要跑别人写的安装脚本】的那一类，而那些脚本大多假设
+#   bash（RHEL 系就是这样，1Panel 的用户也大多在那儿）。
+#
+#   ★ 两个 binsh 包都装会撞同一个文件 usr/bin/sh，所以必须 exclude 父的那一个。
+exclude  = ["dash-binsh"]
+packages = ["bash-binsh"]

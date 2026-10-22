@@ -367,6 +367,68 @@ class Test_services_字段(unittest.TestCase):
             v = flavor.load("server")
             m = flavor.load("minimal")
         self.assertEqual(v["_extends"], "minimal")
-        self.assertEqual(v["packages"], m["packages"], "server 现在一个包都不加")
+        # ★ 2026-10-22：server 现在【换掉了】minimal 的一个包 —— dash-binsh
+        #   （/bin/sh → dash）换成 bash-binsh（/bin/sh → bash），因为 1Panel 的
+        #   init 脚本在 #!/bin/sh 里用了 bash 数组。所以两份清单不再相等，
+        #   而判据变成这一条：**除了那一个被换掉的，其余完全一致**。
+        差 = set(m["packages"]) ^ set(v["packages"])
+        self.assertEqual(差, {"dash-binsh", "bash-binsh"},
+                         f"server 只该换掉 /bin/sh 的提供者，而差集是：{差}")
+        self.assertNotIn("dash-binsh", v["packages"])
+        self.assertIn("bash-binsh", v["packages"])
         self.assertIn("sshd", v["services"])
         self.assertEqual(v["_kind"], "disk", "kind 跟着 minimal")
+
+
+class Test_exclude(unittest.TestCase):
+    """`exclude` 能从（合并后的）清单里去掉包（2026-10-22 加）。
+
+    ★ 起因具体：`server extends minimal`，而 minimal 里有 `dash-binsh`
+      （/bin/sh → dash），server 要 `bash-binsh`（/bin/sh → bash，
+      因为 1Panel 那种安装脚本假设 bash）。两个都装会撞同一个文件。
+
+    ★ 没有 exclude 的话，"继承 + 换掉一个"表达不出来，只能把父那 46 行复制一遍。
+    """
+
+    def _造(self, tmp: Path, 名: str, 内容: str):
+        (tmp / f"{名}.toml").write_text(内容, encoding="utf-8")
+
+    def _load(self, tmp: Path, 名: str):
+        with mock.patch.object(flavor, "VARIANTS_DIR", tmp), 安静():
+            return flavor.load(名)
+
+    def test_去掉一个并加一个(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self._造(tmp, "父", '[variant]\nname = "父"\npackages = ["a", "old-sh"]\n')
+            self._造(tmp, "子",
+                     '[variant]\nname = "子"\nextends = "父"\n'
+                     'exclude = ["old-sh"]\npackages = ["new-sh"]\n')
+            v = self._load(tmp, "子")
+        self.assertEqual(v["packages"], ["a", "new-sh"])
+        self.assertEqual(v["_excluded"], ["old-sh"])
+
+    def test_exclude_一个清单里没有的名字要报错(self):
+        """★★ 写错包名不会报错、只会【什么都不排除】—— 所以这里必须失败。"""
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self._造(tmp, "父", '[variant]\nname = "父"\npackages = ["a"]\n')
+            self._造(tmp, "子",
+                     '[variant]\nname = "子"\nextends = "父"\nexclude = ["拼错了"]\n')
+            with self.assertRaises(SystemExit):
+                self._load(tmp, "子")
+
+    def test_不写_exclude_就什么都不去(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self._造(tmp, "父", '[variant]\nname = "父"\npackages = ["a"]\n')
+            self._造(tmp, "子", '[variant]\nname = "子"\nextends = "父"\n')
+            v = self._load(tmp, "子")
+        self.assertEqual(v["packages"], ["a"])
+        self.assertNotIn("_excluded", v)
+
+    def test_仓库里的_server_换掉的是_binsh(self):
+        with 安静():
+            v = flavor.load("server")
+        self.assertEqual(v.get("_excluded"), ["dash-binsh"])
+        self.assertIn("bash-binsh", v["packages"])

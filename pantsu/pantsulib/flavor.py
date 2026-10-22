@@ -143,6 +143,32 @@ def load(name: str, _seen: tuple[str, ...] = ()) -> dict:
         # kind 没写就跟着父（`server` 是 disk，因为 minimal 是 disk）
         if "kind" not in v and "_kind" in parent:
             v["_kind"] = parent["_kind"]
+
+    # ── exclude：从（合并后的）清单里【去掉】哪些包 ────────────────────────
+    #
+    # ★ 2026-10-22 加，起因具体：`server extends minimal`，而 minimal 里有
+    #   `dash-binsh`（让 /bin/sh → dash）。而 server 要 `bash-binsh`
+    #   （/bin/sh → bash，因为要跑 1Panel 那种假设 bash 的安装脚本）。
+    #
+    #   两个都装会【撞同一个文件】`usr/bin/sh` —— 所以必须能去掉父的那一个。
+    #   没有 exclude 的话，"继承 + 换掉一个"这件事表达不出来，只能把父那 46 行
+    #   复制一遍再改一个字。
+    #
+    # ★ 而"exclude 一个清单里没有的名字"几乎一定是打错了（包名、或者父风味
+    #   变了），所以那件事【当场报错】而不是静静无效。
+    排除 = v.get("exclude", [])
+    if not isinstance(排除, list):
+        die(f"{path}: exclude 必须是列表（现在拿到的是 {type(排除).__name__}）")
+    if 排除:
+        合并前 = list(v["packages"])
+        剩下的 = [x for x in 合并前 if x not in 排除]
+        没找到 = [x for x in 排除 if x not in 合并前]
+        if 没找到:
+            die(f"{path}: exclude 里有这些名字，而清单里没有它们：{没找到}\n"
+                f"       清单里有 {len(合并前)} 个。写错一个名字不会报错、"
+                f"只会【什么都不排除】，所以这里直接失败。")
+        v["packages"] = 剩下的
+        v["_excluded"] = 排除
     v["_path"] = path
     return v
 
