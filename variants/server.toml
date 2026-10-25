@@ -39,4 +39,34 @@ services = ["sshd"]
 #
 #   ★ 两个 binsh 包都装会撞同一个文件 usr/bin/sh，所以必须 exclude 父的那一个。
 exclude  = ["dash-binsh"]
-packages = ["bash-binsh"]
+packages = [
+    "bash-binsh",
+
+    # ── 第 0 期：仓库里已经有、但一直没进风味的（2026-10-25）──────────────
+    #
+    # ★ 对标 Fedora Server 的 core + standard 两组之后发现的：
+    #   这些包【早就建出来了】，只是没人把它们写进风味清单 ——
+    #   于是装完的系统里没有 `dig`、没有 `nft`、没有 D-Bus。
+    #
+    # ★★ 判据（Fedora comps 里怎么分类，我们就怎么分）：
+    #
+    #   dbus        standard 组成员。没有它，systemd 的很多可选能力
+    #               （logind/polkit/networkd）全都起不来；而 1Panel 那种
+    #               装完就想要 D-Bus 的软件会静默地少功能。
+    #   nftables    Fedora 的 firewall 底座。我们有 iptables（nft 后端），
+    #               但 `nft` 命令本身没装 —— 而它才是 settable 的原生写法。
+    #   tcpdump     排障必需。minimal 里没有，而 server 上抓包是常事。
+    #   perl        Fedora 的 core 组成员（perl-interpreter）。我们 build
+    #               工具链大量依赖它，装一个在系统上不亏。
+    #   gettext     NLS 的运行时（libintl + msgfmt）。中文优先的前提 ——
+    #               装它之后 `--disable-nls` 才真的没有借口。
+    #
+    # ★ 而 Fedora 的 standard 里还有一堆我们【暂时没有配方】的
+    #   （bind-utils/netcat/traceroute/pciutils/man-db 等），
+    #   那些是第 1 期的事，不在这里。
+    "dbus",
+    "nftables",
+    "tcpdump",
+    "perl",
+    "gettext",
+]
