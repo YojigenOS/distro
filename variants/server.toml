@@ -69,4 +69,34 @@ packages = [
     "tcpdump",
     "perl",
     "gettext",
+
+    # ── 第 1 期：对标 Fedora Server 的 standard 组，新补的 13 个（2026-10-26）──
+    #
+    # ★ 判据（YG 第 1 条"基础包要全"）：Fedora 的 core + standard 两组里
+    #   我们有对应物的已经全在 minimal 里了；这 13 个是我们原来【没有配方】的。
+    #
+    # ★★ 排障那一组是重点 —— 没有它们的系统"查不了问题"：
+    #
+    #   bind9       dig / host / nslookup —— DNS 出问题时第一把工具。
+    #               它带 3 个依赖（libuv / liburcu / lmdb），链是我们目前最长的。
+    #   pciutils    lspci —— 看不到硬件就没法判断"驱动加载了吗"
+    #   usbutils    lsusb —— 同上，USB 那一侧
+    #   traceroute  网络不通时定位在哪一跳
+    #
+    # ★ 而标准工具那一组：
+    #   acl attr    getfacl/setfacl · getfattr/setfattr —— POSIX ACL 是
+    #               "文件权限"的一部分，没有它们 `+` 号那一格是空的
+    #   ed          POSIX 标准编辑器（一些 build 脚本和 patch 用）
+    #   tree whois 日常
+    #   dos2unix    Windows 换行符转换
+    "bind9",
+    "pciutils",
+    "usbutils",
+    "traceroute",
+    "acl",
+    "attr",
+    "ed",
+    "tree",
+    "whois",
+    "dos2unix",
 ]
