@@ -127,4 +127,13 @@ packages = [
     #   ★ 它带两个前置：json-c（LUKS2 元数据是 JSON）和 libdevmapper
     #     （从 LVM2 源码树只编 libdm 那一层）。两个都进了仓库。
     "cryptsetup",
+
+    # ★ 第 4 期（下）：签名与加密（2026-10-26）
+    #
+    #   gnupg   gpg —— 包签名验证（我们的 apk 仓库就是签名的）、加密通信、
+    #           `git commit -S` 签提交。它是 B 类里依赖最重的：5 个前置库
+    #           （libgpg-error / libgcrypt / libassuan / libksba / npth）+ sqlite。
+    #
+    #   ★ 实测 TX 上：生成密钥 / 加密 / 解密（中文无损）/ 签名验证 全通。
+    "gnupg",
 ]
