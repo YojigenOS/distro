@@ -99,4 +99,32 @@ packages = [
     "tree",
     "whois",
     "dos2unix",
+
+    # ── 第 4 期（上）：服务器运维四件套（2026-10-26）────────────────────
+    #
+    # ★ 这四个是"一台服务器该有的诊断能力"，都属 Fedora 的 standard 组。
+    #
+    #   ethtool        网卡：速率/双工/丢包/固件版本。`ip link` 只看得到
+    #                  UP/DOWN，看不到**为什么**慢。
+    #   parted         分区：我们的交付是 DD 一个 rootfs（0013），
+    #                  扩盘之后 `parted resizepart` 是最直接的路 —— fdisk 做不了。
+    #   smartmontools  磁盘健康：一台服务器最怕的不是"坏了"，是"坏了才知道"。
+    #   mdadm          软件 RAID：两块盘做镜像是最常见的起点，纯软件实现。
+    #
+    # ★ 四个都在 TX 上验过产物（构建通过、包进仓库）。
+    "ethtool",
+    "parted",
+    "smartmontools",
+    "mdadm",
+
+    # ★ 第 4 期（下）：加密盘（2026-10-26）
+    #
+    #   cryptsetup   LUKS 磁盘加密 —— 全盘加密是标准运维实践，而 LUKS 是
+    #                Linux 上唯一的格式。**它同时解开 systemd 的
+    #                `-Dlibcryptsetup`**（那个关着时不能读 /etc/crypttab，
+    #                也就是"开机自动解锁加密盘"做不到）。
+    #
+    #   ★ 它带两个前置：json-c（LUKS2 元数据是 JSON）和 libdevmapper
+    #     （从 LVM2 源码树只编 libdm 那一层）。两个都进了仓库。
+    "cryptsetup",
 ]
